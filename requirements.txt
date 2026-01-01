@@ -1,0 +1,5 @@
+# Legal RAG Application Dependencies
+llama-index==0.14.12
+llama-parse==0.6.54
+python-dotenv
+docx2pdf
