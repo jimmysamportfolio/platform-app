@@ -1,5 +1,26 @@
-# Legal RAG Application Dependencies
-llama-index==0.14.12
-llama-parse==0.6.54
-python-dotenv
-docx2pdf
+# --- Environment & Configuration ---
+python-dotenv>=1.0.1           # Loads your .env file
+
+# --- PDF Parsing (LlamaParse) ---
+llama-parse>=0.6.88            # Critical for table-heavy leases
+llama-index-core>=0.10.0       # Required dependency for LlamaParse
+
+# --- Data Validation ---
+pydantic>=2.12.5               # Required for the "Insight Layer" JSON extraction
+
+# --- Orchestration (LangChain) ---
+langchain>=0.3.0               # Core logic
+langchain-community>=0.3.0     # Needed for various loaders and tools
+langchain-text-splitters>=0.3.0 # For MarkdownHeaderTextSplitter
+
+# --- Google Gemini (The Free "Brain") ---
+langchain-google-genai>=2.0.0  # Wrapper for Gemini 1.5 Flash & Embeddings
+google-generativeai>=0.8.0     # Official Google SDK
+
+# --- Vector Database (Pinecone) ---
+langchain-pinecone>=0.2.0      # LangChain connector for Pinecone
+pinecone>=5.0.0                # Official Pinecone SDK
+
+# --- Reranking (The Free Local Option) ---
+flashrank>=0.2.8               # Local, CPU-based Reranker (Replaces Cohere)
+numpy>=1.26.0                  # Required for FlashRank math
