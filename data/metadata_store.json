@@ -1,1 +1,82 @@
-{}
+{
+  "documents": {
+    "Lease Draft #4 (final) - Church's Chicken, 11939 240 Street, MR - Jul 13, 2020.docx": {
+      "lease_date": "2020-07-13",
+      "tenant_name": "1256325 B.C. LTD.",
+      "trade_name": "Church\u2019s Chicken",
+      "landlord_name": "PLATFORM PROPERTIES (MAPLE RIDGE) LTD.",
+      "premises_description": "Unit #170",
+      "property_address": "11939 240 Street, Maple Ridge, B.C.",
+      "rentable_area_sqft": 1761.0,
+      "commencement_date": "2021-03-01",
+      "expiration_date": "2031-02-28",
+      "term_years": 10.0,
+      "possession_date": "2020-11-01",
+      "deposit_amount": 20000.0,
+      "basic_rent_schedule": [
+        {
+          "start_year": 1.0,
+          "end_year": 3.0,
+          "rate_psf": 40.0,
+          "monthly_rent": 5870.0,
+          "annual_rent": 70440.0
+        },
+        {
+          "start_year": 4.0,
+          "end_year": 7.0,
+          "rate_psf": 43.0,
+          "monthly_rent": 6310.25,
+          "annual_rent": 75723.0
+        },
+        {
+          "start_year": 8.0,
+          "end_year": 10.0,
+          "rate_psf": 46.0,
+          "monthly_rent": 6750.5,
+          "annual_rent": 81006.0
+        }
+      ],
+      "renewal_options": "2 option(s) to renew for 5 year term(s)",
+      "permitted_use": "Operating a sit down, delivery and take out style fried chicken restaurant for the sale of a variety of chicken products as primary menu items, and as ancillary items, fries, biscuits, carbonated beverages, milk, juice, and other related products.",
+      "exclusive_use": "Landlord will not lease premises in the Shopping Centre to any tenant whose principal business is the sale of chicken products (e.g., KFC, Popeyes Chicken, Mary Brown\u2019s Chicken & Taters, Swiss Chalet or Barcelo\u2019s). This does not apply to existing tenants or tenants occupying in excess of 8,000 square feet.",
+      "radius_restriction": "Tenant is restricted from operating a similar or competing business within three (3) kilometres of the Shopping Centre.",
+      "indemnifier_name": "Harpreet Bahia & Jatinder Badyal"
+    },
+    "Lease Draft #3 (final) - H. Sran Ventures, 11939 240 Street, MR - Feb 27, 2020.docx": {
+      "lease_date": "2020-02-27",
+      "tenant_name": "H. SRAN VENTURES INC.",
+      "trade_name": null,
+      "landlord_name": "PLATFORM PROPERTIES (MAPLE RIDGE) LTD.",
+      "premises_description": "Unit #160",
+      "property_address": "11939 240 Street, Maple Ridge, B.C.",
+      "rentable_area_sqft": 1100.0,
+      "commencement_date": "2020-10-14",
+      "expiration_date": "2030-11-01",
+      "term_years": 10.0,
+      "possession_date": "2020-06-01",
+      "deposit_amount": 9000.0,
+      "basic_rent_schedule": [
+        {
+          "start_year": 1.0,
+          "end_year": 5.0,
+          "rate_psf": 36.0,
+          "monthly_rent": 3300.0,
+          "annual_rent": 39600.0
+        },
+        {
+          "start_year": 6.0,
+          "end_year": 10.0,
+          "rate_psf": 39.0,
+          "monthly_rent": 3575.0,
+          "annual_rent": 42900.0
+        }
+      ],
+      "renewal_options": "2 option(s) to renew for 5 year term(s)",
+      "permitted_use": "veterinary clinic/veterinary hospital",
+      "exclusive_use": "Landlord will not lease premises in the Shopping Centre, other than the Premises, to any tenant whose principal business is that of a veterinary clinic/veterinary hospital. This does not apply to existing tenants or tenants occupying in excess of 8,000 square feet of Rentable Area.",
+      "radius_restriction": "Tenant is restricted from operating a similar or competing business within three (3) kilometres of the Shopping Centre.",
+      "indemnifier_name": "HARJINDER SRAN & NAVDEEP SRAN"
+    }
+  },
+  "last_updated": "2026-01-02T01:58:03.600214"
+}
