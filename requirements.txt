@@ -24,3 +24,5 @@ pinecone>=5.0.0                # Official Pinecone SDK
 # --- Reranking (The Free Local Option) ---
 flashrank>=0.2.8               # Local, CPU-based Reranker (Replaces Cohere)
 numpy>=1.26.0                  # Required for FlashRank math
+
+matplotlib>=3.7.1              # For visualizing token distribution
