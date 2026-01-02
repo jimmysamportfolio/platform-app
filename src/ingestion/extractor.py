@@ -124,40 +124,13 @@ class LeaseExtractor:
             Lease object with extracted data.
         """
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert commercial real estate lease abstractor. Your goal is to accurately extract key terms from the provided lease document text.
-
-CRITICAL EXTRACTION GUIDELINES:
-
-1. DATES - Look carefully for:
-   - "Possession Date": Often in Schedule B, may say "estimated to be [DATE]"
-   - "Commencement Date": Often defined as "expiry of the Fixturing Period" - if so, CALCULATE it by adding the Fixturing Period days to the Possession Date
-   - "Expiration Date": Calculate from Commencement Date + Term Years if not explicit
-   - "Fixturing Period": Look for phrases like "X days' free possession"
-
-2. EXCLUSIVE USE - Search for:
-   - Section titled "Exclusive Use" (often in Schedules)
-   - Clauses about competitors the landlord cannot lease to (e.g., "will not lease to any tenant whose principal business is...")
-   - Extract the SPECIFIC restriction details
-
-3. RADIUS RESTRICTION - Look for:
-   - Clauses restricting tenant from operating similar business within X miles/km
-   - Often in Schedule B or restrictive covenants section
-
-4. RENEWAL OPTIONS - Format as: "X option(s) to renew for Y year term(s)"
-
-5. DATES FORMAT: Always use YYYY-MM-DD format
-
-6. If a field can be CALCULATED from other data (e.g., expiration = commencement + term), DO the calculation.
-
-7. Read the ENTIRE document including all Schedules (A, B, C, D) - key information is often there.
-
-8. RENT SCHEDULE - Extract ALL rent steps from the Basic Rent table:
-   - Look for tables with columns like "Lease Year", "Per Square Foot", "Per Annum", "Per Month"
-   - For EACH rent step, extract: start_year, end_year, rate_psf, monthly_rent, annual_rent
-   - ALWAYS extract the monthly_rent value (often labeled "Per Month" in the table)
-   - If monthly_rent is not explicit, CALCULATE it: annual_rent / 12
-
-BE THOROUGH - missing data often exists in Schedules at the end of the document."""),
+            ("system", """You are an expert commercial real estate lease abstractor. Your goal is to accurately extract key terms from the provided lease document text. 
+            
+            GUIDELINES:
+            1. Review the lease text carefully and extract the information to match the requested JSON schema.
+            2. Pay visual attention to: Rent schedules (extract all periods/steps), Dates (normalize to YYYY-MM-DD), and Missing fields (leave null).
+            3. Be precise with names and descriptions.
+            """),
             ("human", "Lease Text:\n{text}")
         ])
         
