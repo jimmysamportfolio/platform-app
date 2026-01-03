@@ -10,13 +10,19 @@ This module is responsible for:
 """
 
 import os
+import sys
 from typing import List, Optional, Dict, Any
+
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from dotenv import load_dotenv
 from pinecone import Pinecone
 from pinecone.exceptions import PineconeException
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
+
+from config.settings import DEFAULT_EMBEDDING_MODEL, VECTOR_NAMESPACE as DEFAULT_NAMESPACE
 
 load_dotenv()
 
@@ -28,10 +34,6 @@ class LeaseVectorStore:
     Uses Pinecone for vector storage and Google Gemini for embeddings.
     Supports metadata filtering for tenant/property-specific searches.
     """
-    
-    # Default configuration
-    DEFAULT_EMBEDDING_MODEL = "models/text-embedding-004"
-    DEFAULT_NAMESPACE = "leases"
     
     def __init__(
         self,

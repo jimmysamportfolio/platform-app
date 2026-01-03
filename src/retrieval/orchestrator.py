@@ -16,9 +16,13 @@ from dataclasses import dataclass
 
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from dotenv import load_dotenv
 from langchain_core.documents import Document
+
+from config.settings import RETRIEVAL_K, RERANK_TOP_N, VECTOR_NAMESPACE
 
 from retrieval.router import QueryRouter
 from retrieval.vector_store import LeaseVectorStore
@@ -50,9 +54,9 @@ class LeaseRAGOrchestrator:
     
     def __init__(
         self,
-        vector_namespace: str = "leases-test",
-        retrieval_k: int = 25,
-        rerank_top_n: int = 5,
+        vector_namespace: str = VECTOR_NAMESPACE,
+        retrieval_k: int = RETRIEVAL_K,
+        rerank_top_n: int = RERANK_TOP_N,
         lazy_init: bool = False,
     ):
         """

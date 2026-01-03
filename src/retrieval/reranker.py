@@ -9,10 +9,17 @@ This module is responsible for:
 - Handling edge cases (empty inputs, single documents)
 """
 
+import os
+import sys
 from typing import List, Optional
+
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from flashrank import Ranker, RerankRequest
 from langchain_core.documents import Document
+
+from config.settings import DEFAULT_RERANKER_MODEL, RERANKER_CACHE_DIR
 
 
 class LeaseReranker:
@@ -27,9 +34,8 @@ class LeaseReranker:
     # - "ms-marco-TinyBERT-L-2-v2" (Default, fastest, ~4MB)
     # - "ms-marco-MiniLM-L-12-v2" (Balanced, ~34MB)
     # - "rank-T5-flan" (Most accurate, ~110MB)
-    DEFAULT_MODEL = "ms-marco-TinyBERT-L-2-v2"
-    
-    def __init__(self, model_name: str = DEFAULT_MODEL, cache_dir: str = ".flashrank_cache"):
+
+    def __init__(self, model_name: str = DEFAULT_RERANKER_MODEL, cache_dir: str = RERANKER_CACHE_DIR):
         """
         Initialize the reranker.
         

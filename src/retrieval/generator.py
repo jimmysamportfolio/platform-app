@@ -10,13 +10,20 @@ This module is responsible for:
 """
 
 import os
+import sys
 from typing import List, Optional
+
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
+
+from config.settings import DEFAULT_LLM_MODEL, LLM_TEMPERATURE
+from config.prompts import RAG_SYSTEM_PROMPT, RAG_HUMAN_TEMPLATE
 
 load_dotenv()
 
@@ -28,25 +35,8 @@ class RAGGenerator:
     Uses Gemini to generate grounded answers from retrieved documents.
     Enforces citation and prevents hallucination.
     """
-    
-    SYSTEM_PROMPT = """You are a specialized Legal Assistant for reviewing commercial real estate leases.
 
-CRITICAL INSTRUCTIONS:
-1. Answer the user's question using ONLY the context provided below.
-2. If the answer is not found in the context, state: "The provided lease documents do not contain this information."
-3. DO NOT hallucinate or make up information.
-4. When possible, cite the specific Lease Name, Section, or Article from the context.
-5. Be precise and factual. Use direct quotes when helpful.
-6. If multiple leases are mentioned, clearly distinguish between them.
-
-CONTEXT FROM RETRIEVED DOCUMENTS:
-{context}"""
-
-    HUMAN_TEMPLATE = """Question: {question}
-
-Please provide a detailed, accurate answer based on the lease documents above."""
-
-    def __init__(self, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, model_name: str = DEFAULT_LLM_MODEL):
         """
         Initialize the RAG generator.
         
@@ -62,14 +52,14 @@ Please provide a detailed, accurate answer based on the lease documents above.""
         
         self.llm = ChatGoogleGenerativeAI(
             model=model_name,
-            temperature=0,  # Strict factual answers
+            temperature=LLM_TEMPERATURE,
             google_api_key=api_key,
         )
         
         # Build the prompt template
         self.prompt = ChatPromptTemplate.from_messages([
-            ("system", self.SYSTEM_PROMPT),
-            ("human", self.HUMAN_TEMPLATE),
+            ("system", RAG_SYSTEM_PROMPT),
+            ("human", RAG_HUMAN_TEMPLATE),
         ])
         
         # Build the chain

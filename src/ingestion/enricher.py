@@ -10,12 +10,20 @@ This module is responsible for:
 """
 
 import os
+import sys
 import asyncio
 from typing import List, Optional
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
-import google.generativeai as genai
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+# New google.genai SDK (replaces deprecated google.generativeai)
+from google import genai
+
+from config.settings import DEFAULT_LLM_MODEL, CLAUSE_TYPES
+from config.prompts import ENRICHMENT_PROMPT
 
 # Load environment variables
 load_dotenv()
@@ -92,57 +100,10 @@ class ChunkEnricher:
     is enriched with a contextual summary that situates it within
     the broader document context, improving retrieval accuracy.
     """
-    
-    # Legal document clause types for classification
-    CLAUSE_TYPES = [
-        "definitions",
-        "rent_payment",
-        "security_deposit",
-        "maintenance_repairs",
-        "insurance",
-        "default_remedies",
-        "termination",
-        "assignment_subletting",
-        "use_restrictions",
-        "environmental",
-        "indemnification",
-        "general_provisions",
-        "schedules_exhibits",
-        "parties_recitals",
-        "other"
-    ]
-    
-    ENRICHMENT_PROMPT = """You are a legal document analyst. Analyze this chunk from a commercial lease agreement and provide enrichment metadata.
-
-DOCUMENT CONTEXT:
-Document Type: Commercial Lease Agreement
-Document Title: {doc_title}
-
-CHUNK METADATA:
-{chunk_metadata}
-
-CHUNK CONTENT:
-{chunk_content}
-
-Provide the following in a structured format:
-
-1. CONTEXTUAL_SUMMARY: A 1-2 sentence summary that situates this chunk within the broader lease document. Focus on what this section covers and its legal significance. Start with "This section..." or "This clause...".
-
-2. SEMANTIC_TAGS: 3-5 relevant tags for retrieval (lowercase, underscore-separated). Examples: rent_calculation, tenant_obligations, force_majeure, notice_requirements
-
-3. KEY_ENTITIES: List any specific entities mentioned (party names, addresses, dates, dollar amounts, percentages)
-
-4. CLAUSE_TYPE: Classify into one of: {clause_types}
-
-Format your response EXACTLY as:
-CONTEXTUAL_SUMMARY: [your summary]
-SEMANTIC_TAGS: [tag1, tag2, tag3]
-KEY_ENTITIES: [entity1, entity2]
-CLAUSE_TYPE: [clause_type]"""
 
     def __init__(
         self,
-        model_name: str = "gemini-2.5-flash",
+        model_name: str = DEFAULT_LLM_MODEL,
         doc_title: str = "Commercial Lease Agreement",
         batch_size: int = 5,
         rate_limit_delay: float = 0.5,
@@ -161,23 +122,22 @@ CLAUSE_TYPE: [clause_type]"""
         self.batch_size = batch_size
         self.rate_limit_delay = rate_limit_delay
         
-        # Configure Gemini
+        # Configure Gemini using new google.genai SDK
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
             raise ValueError("GOOGLE_API_KEY environment variable not set")
         
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel(model_name)
+        self.client = genai.Client(api_key=api_key)
     
     def _build_prompt(self, content: str, metadata: dict) -> str:
         """Build the enrichment prompt for a chunk."""
         metadata_str = "\n".join(f"  {k}: {v}" for k, v in metadata.items()) if metadata else "  None"
         
-        return self.ENRICHMENT_PROMPT.format(
+        return ENRICHMENT_PROMPT.format(
             doc_title=self.doc_title,
             chunk_metadata=metadata_str,
             chunk_content=content[:2000],  # Limit content to avoid token overflow
-            clause_types=", ".join(self.CLAUSE_TYPES)
+            clause_types=", ".join(CLAUSE_TYPES)
         )
     
     def _parse_response(self, response_text: str) -> dict:
@@ -209,7 +169,7 @@ CLAUSE_TYPE: [clause_type]"""
             
             elif line.startswith("CLAUSE_TYPE:"):
                 clause = line.replace("CLAUSE_TYPE:", "").strip().lower()
-                if clause in self.CLAUSE_TYPES:
+                if clause in CLAUSE_TYPES:
                     result["clause_type"] = clause
         
         return result
@@ -247,7 +207,11 @@ CLAUSE_TYPE: [clause_type]"""
         source_section = metadata.get("article", "") or metadata.get("section", "")
         
         try:
-            response = self.model.generate_content(prompt)
+            # Use new google.genai SDK client API
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+            )
             parsed = self._parse_response(response.text)
             
             return EnrichedChunk(

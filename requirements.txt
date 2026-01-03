@@ -15,7 +15,7 @@ langchain-text-splitters>=0.3.0 # For MarkdownHeaderTextSplitter
 
 # --- Google Gemini (The Free "Brain") ---
 langchain-google-genai>=2.0.0  # Wrapper for Gemini 1.5 Flash & Embeddings
-google-generativeai>=0.8.0     # Official Google SDK
+google-genai>=1.0.0            # New unified Google GenAI SDK (replaces deprecated google-generativeai)
 
 # --- Vector Database (Pinecone) ---
 langchain-pinecone>=0.2.0      # LangChain connector for Pinecone

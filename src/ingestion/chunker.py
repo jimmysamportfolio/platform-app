@@ -9,11 +9,18 @@ This module is responsible for:
 - Configurable chunk sizes with overlap
 """
 
+import os
+import sys
 import re
 from typing import List, Optional
 from dataclasses import dataclass, field
 
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+
+from config.settings import MAX_CHUNK_TOKENS, SECONDARY_CHUNK_SIZE, SECONDARY_CHUNK_OVERLAP, ORPHAN_CHUNK_MIN_TOKENS
 
 
 @dataclass
@@ -63,9 +70,9 @@ class DocumentChunker:
     
     def __init__(
         self,
-        max_tokens: int = 1000,
-        secondary_chunk_size: int = 800,
-        secondary_chunk_overlap: int = 100,
+        max_tokens: int = MAX_CHUNK_TOKENS,
+        secondary_chunk_size: int = SECONDARY_CHUNK_SIZE,
+        secondary_chunk_overlap: int = SECONDARY_CHUNK_OVERLAP,
     ):
         """
         Initialize the DocumentChunker.
@@ -216,8 +223,8 @@ class DocumentChunker:
             while i < len(chunks_to_process):
                 current_chunk = chunks_to_process[i]
                 
-                # Check if current chunk is an orphan (header-only, <25 tokens)
-                if current_chunk.token_count < 25 and i + 1 < len(chunks_to_process):
+                # Check if current chunk is an orphan (header-only, < threshold tokens)
+                if current_chunk.token_count < ORPHAN_CHUNK_MIN_TOKENS and i + 1 < len(chunks_to_process):
                     # Merge with next chunk
                     next_chunk = chunks_to_process[i + 1]
                     merged_content = f"{current_chunk.content}\n\n{next_chunk.content}"
