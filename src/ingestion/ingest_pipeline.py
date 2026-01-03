@@ -32,6 +32,7 @@ from ingestion.parser import DocumentParser
 from ingestion.chunker import DocumentChunker, Chunk
 from ingestion.enricher import ChunkEnricher, EnrichedChunk
 from ingestion.extractor import LeaseExtractor, Lease
+from utils.db import init_db, insert_lease
 
 load_dotenv()
 
@@ -280,11 +281,10 @@ class IngestionPipeline:
                 )
                 print(f"   Uploaded {min(i + batch_size, len(vectors_to_upsert))}/{len(vectors_to_upsert)} vectors")
             
-            # Save lease metadata to store
-            print("\n💾 Saving metadata...")
-            store = self._load_metadata_store()
-            store["documents"][document_name] = lease.model_dump(mode="json")
-            self._save_metadata_store(store)
+            # Save lease metadata to SQLite database
+            print("\n💾 Saving metadata to database...")
+            lease_id = insert_lease(lease.model_dump(mode="json"), document_name)
+            print(f"📁 Lease saved to database (ID: {lease_id})")
             
             processing_time = time.time() - start_time
             

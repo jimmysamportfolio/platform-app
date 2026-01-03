@@ -1,21 +1,24 @@
 """
 Analytics Handler Module
 
-Handles structured data queries against metadata_store.json
+Handles structured data queries against SQLite database.
 This module is responsible for:
-- Loading and querying the metadata store
+- Querying the leases database
 - Returning structured data directly (NO LLM calls)
 - Answering aggregate/calculation questions
 - Looking up specific values (deposit amounts, rent, dates)
 """
 
 import os
-import json
+import sys
 from typing import List, Dict, Any, Optional
-from pathlib import Path
 from dataclasses import dataclass
 
+# Add src to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 from dotenv import load_dotenv
+from utils.db import get_connection, get_all_leases, get_lease_by_tenant, get_rent_schedule
 
 load_dotenv()
 
@@ -31,54 +34,35 @@ class AnalyticsResult:
 
 class AnalyticsHandler:
     """
-    Handles analytics queries using structured data from metadata_store.json.
+    Handles analytics queries using structured data from SQLite database.
     
     **NO LLM CALLS** - Returns structured data directly for fast, rate-limit-free responses.
     """
     
-    DEFAULT_METADATA_PATH = "data/metadata_store.json"
-    
-    def __init__(self, metadata_path: str = DEFAULT_METADATA_PATH):
+    def __init__(self, db_path: str = "data/leases.db"):
         """
         Initialize the analytics handler.
         
         Args:
-            metadata_path: Path to metadata_store.json.
+            db_path: Path to SQLite database.
         """
-        self.metadata_path = Path(metadata_path)
-        self.metadata = self._load_metadata()
-        
-        print(f"✅ AnalyticsHandler initialized ({len(self.get_all_leases())} leases loaded)")
-    
-    def _load_metadata(self) -> Dict:
-        """Load metadata from JSON file."""
-        if not self.metadata_path.exists():
-            print(f"⚠️ Metadata file not found: {self.metadata_path}")
-            return {"documents": {}}
-        
-        with open(self.metadata_path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    
-    def reload_metadata(self):
-        """Reload metadata from disk."""
-        self.metadata = self._load_metadata()
-    
-    def get_all_leases(self) -> Dict[str, Dict]:
-        """Get all lease documents."""
-        return self.metadata.get("documents", {})
+        self.db_path = db_path
+        leases = get_all_leases(db_path)
+        print(f"✅ AnalyticsHandler initialized ({len(leases)} leases loaded)")
     
     def _normalize_text(self, text: str) -> str:
         """Normalize text for matching (handle different apostrophe types, etc.)."""
         if not text:
             return ""
         # Normalize different apostrophe types to standard straight quote
-        # \u2019 = right single quote (curly)
-        # \u2018 = left single quote (curly)
-        # \u0060 = backtick
         text = text.replace("\u2019", "'").replace("\u2018", "'").replace("\u0060", "'")
         return text.lower().strip()
     
-    def get_lease_by_tenant(self, tenant_name: str) -> Optional[Dict]:
+    def get_all_leases(self) -> List[Dict[str, Any]]:
+        """Get all lease documents."""
+        return get_all_leases(self.db_path)
+    
+    def get_lease_by_tenant(self, tenant_name: str) -> Optional[Dict[str, Any]]:
         """
         Find a lease by tenant name (partial match).
         
@@ -88,20 +72,8 @@ class AnalyticsHandler:
         Returns:
             Lease data dict or None if not found.
         """
-        search_term = self._normalize_text(tenant_name)
-        
-        for doc_name, lease in self.get_all_leases().items():
-            # Check tenant name
-            tenant = self._normalize_text(lease.get("tenant_name", ""))
-            if search_term in tenant:
-                return {"document": doc_name, **lease}
-            
-            # Check trade name (e.g., "Church's Chicken")
-            trade = self._normalize_text(lease.get("trade_name", ""))
-            if trade and search_term in trade:
-                return {"document": doc_name, **lease}
-        
-        return None
+        normalized = self._normalize_text(tenant_name)
+        return get_lease_by_tenant(normalized, self.db_path)
     
     # --- Direct Value Lookups (No LLM) ---
     
@@ -137,7 +109,7 @@ class AnalyticsHandler:
         """Get lease expiration date for a specific tenant."""
         lease = self.get_lease_by_tenant(tenant_name)
         if lease:
-            exp = lease.get("expiration_date")
+            exp = lease.get("lease_end")
             if exp:
                 return AnalyticsResult(
                     success=True,
@@ -151,7 +123,7 @@ class AnalyticsHandler:
         """Get rent schedule for a specific tenant."""
         lease = self.get_lease_by_tenant(tenant_name)
         if lease:
-            schedule = lease.get("basic_rent_schedule", [])
+            schedule = get_rent_schedule(lease["id"], self.db_path)
             if schedule:
                 lines = [f"**Rent Schedule for {lease.get('tenant_name')}:**"]
                 for step in schedule:
@@ -168,9 +140,10 @@ class AnalyticsHandler:
     
     def get_total_deposit(self) -> AnalyticsResult:
         """Calculate total security deposits across all leases."""
+        leases = self.get_all_leases()
         total = 0.0
         count = 0
-        for lease in self.get_all_leases().values():
+        for lease in leases:
             deposit = lease.get("deposit_amount", 0) or 0
             if deposit:
                 total += deposit
@@ -185,9 +158,10 @@ class AnalyticsHandler:
     
     def get_average_rent_psf(self) -> AnalyticsResult:
         """Calculate average rent per square foot (Year 1)."""
+        leases = self.get_all_leases()
         rents = []
-        for doc, lease in self.get_all_leases().items():
-            schedule = lease.get("basic_rent_schedule", [])
+        for lease in leases:
+            schedule = get_rent_schedule(lease["id"], self.db_path)
             if schedule:
                 rents.append({"tenant": lease.get("tenant_name"), "rate": schedule[0].get("rate_psf", 0)})
         
@@ -211,12 +185,12 @@ class AnalyticsHandler:
         if not leases:
             return AnalyticsResult(success=False, answer="No leases in portfolio.")
         
-        total_deposit = sum(l.get("deposit_amount", 0) or 0 for l in leases.values())
-        tenants = [l.get("trade_name") or l.get("tenant_name") for l in leases.values()]
+        total_deposit = sum(l.get("deposit_amount", 0) or 0 for l in leases)
+        tenants = [l.get("trade_name") or l.get("tenant_name") for l in leases]
         
         lines = [
             f"**Portfolio Summary ({len(leases)} leases):**",
-            f"- Tenants: {', '.join(tenants)}",
+            f"- Tenants: {', '.join(str(t) for t in tenants)}",
             f"- Total Deposits: ${total_deposit:,.2f}",
         ]
         
@@ -235,10 +209,10 @@ if __name__ == "__main__":
     print("\n--- Direct Lookups (No LLM) ---")
     
     # Test deposit lookup
-    result = handler.get_deposit_amount("Church's Chicken")
+    result = handler.get_deposit_amount("Church")
     print(f"\n{result.answer}")
     
-    result = handler.get_deposit_amount("H. Sran")
+    result = handler.get_deposit_amount("Sran")
     print(f"\n{result.answer}")
     
     # Test term lookup
@@ -247,6 +221,10 @@ if __name__ == "__main__":
     
     # Test expiration
     result = handler.get_expiration("Sran")
+    print(f"\n{result.answer}")
+    
+    # Test rent schedule
+    result = handler.get_rent_schedule("Church")
     print(f"\n{result.answer}")
     
     # Test aggregates
