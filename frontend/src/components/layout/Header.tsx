@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
  * Maps routes to page titles.
  */
 const pageTitles: Record<string, string> = {
-    "/analytics": "Dashboard",
+    "/analytics": "Portfolio Analytics",
     "/qa": "Q&A",
     "/documents": "Documents",
     "/": "Home",

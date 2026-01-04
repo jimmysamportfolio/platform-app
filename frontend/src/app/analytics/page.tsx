@@ -241,9 +241,12 @@ export default function AnalyticsPage() {
                 {/* Lease Breakdown */}
                 <Card>
                     <CardHeader className="pb-4">
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            {/* Search, Filter, Sort controls - LEFT */}
-                            <div className="flex items-center gap-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+                            {/* Title - LEFT */}
+                            <CardTitle className="text-base whitespace-nowrap">Lease Breakdown</CardTitle>
+
+                            {/* Search, Filter, Sort controls - RIGHT of Title */}
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
                                 {/* Search */}
                                 <div className="relative">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -295,9 +298,6 @@ export default function AnalyticsPage() {
                                     </DropdownMenuContent>
                                 </DropdownMenu>
                             </div>
-
-                            {/* Title - RIGHT */}
-                            <CardTitle className="text-base">Lease Breakdown</CardTitle>
                         </div>
                     </CardHeader>
                     <CardContent>
