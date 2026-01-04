@@ -29,3 +29,7 @@ matplotlib>=3.7.1              # For visualizing token distribution
 
 # --- File Monitoring ---
 watchdog>=3.0.0                # File system event monitoring for auto-ingestion
+
+# --- API Server ---
+fastapi>=0.115.0               # REST API for frontend
+uvicorn>=0.30.0                # ASGI server for FastAPI
