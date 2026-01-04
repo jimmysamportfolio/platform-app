@@ -46,20 +46,21 @@ app.add_middleware(
 _orchestrator: Optional[LeaseRAGOrchestrator] = None
 _analyzer: Optional[PortfolioAnalyzer] = None
 _observer: Optional[Observer] = None  # File watcher observer
+_ingestion_handler: Optional[IngestionHandler] = None  # Reference to handler
 
 @app.on_event("startup")
 async def startup_event():
     """Start the file watcher on server startup."""
-    global _observer
+    global _observer, _ingestion_handler
     print("\n🐕 Starting Background File Watcher...")
     try:
-        handler = IngestionHandler(
+        _ingestion_handler = IngestionHandler(
             input_folder=WATCHDOG_INPUT_FOLDER,
             processed_folder=WATCHDOG_PROCESSED_FOLDER,
             db_path=DEFAULT_DB_PATH
         )
         _observer = Observer()
-        _observer.schedule(handler, str(handler.input_folder), recursive=False)
+        _observer.schedule(_ingestion_handler, str(_ingestion_handler.input_folder), recursive=False)
         _observer.start()
         print("✅ File Watcher running in background thread")
     except Exception as e:
@@ -183,10 +184,12 @@ async def delete_document(document_name: str):
     This removes:
     1. The lease record from database
     2. The ingestion logs
-    3. The files from input/processed folders (optional, but good for cleanup)
+    3. Vectors from Pinecone
     """
+    global _ingestion_handler
     try:
         from utils.db import delete_lease, delete_ingestion_log
+        from retrieval.vector_store import LeaseVectorStore
         
         # 1. Delete from database
         lease_deleted = delete_lease(document_name)
@@ -195,17 +198,25 @@ async def delete_document(document_name: str):
         if not lease_deleted and not log_deleted:
             raise HTTPException(status_code=404, detail="Document not found in database")
 
-        # 2. Try to clean up files (best effort)
-        # Note: We won't delete from Pinecone here yet as we need the vector IDs 
-        # (which we don't store mapping for currently). 
-        # But removing from DB prevents analytics usage.
+        # 2. Tell the file watcher to forget this file (so it can be re-added)
+        if _ingestion_handler:
+            _ingestion_handler.forget_file(document_name)
         
+        # 3. Delete vectors from Pinecone
+        vectors_deleted = 0
+        try:
+            vector_store = LeaseVectorStore()
+            vectors_deleted = vector_store.delete_by_document(document_name)
+        except Exception as e:
+            print(f"⚠️ Failed to delete vectors from Pinecone: {e}")
+
         return {
             "status": "success", 
             "message": f"Deleted document: {document_name}",
             "details": {
                 "lease_deleted": lease_deleted,
-                "logs_deleted": log_deleted
+                "logs_deleted": log_deleted,
+                "vectors_deleted": vectors_deleted
             }
         }
     except HTTPException:

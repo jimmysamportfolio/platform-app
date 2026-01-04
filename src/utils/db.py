@@ -261,19 +261,19 @@ def _normalize_text(text: str) -> str:
 
 def get_lease_by_tenant(tenant_name: str, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
     """
-    Find a lease by tenant name (partial match).
+    Find a lease by tenant name (strict matching).
     
     Args:
         tenant_name: Full or partial tenant name.
         
     Returns:
-        Lease dictionary or None.
+        Lease dictionary or None if no good match found.
     """
     def _get_words(text: str) -> set[str]:
         # Replace common punctuation with space to isolate words
-        clean = text.lower().replace("'", " ").replace("’", " ").replace(".", " ")
+        clean = text.lower().replace("'", " ").replace("'", " ").replace(".", " ")
         # Filter out very short words (like "s" from "church's") unless query is short
-        words = set(w for w in clean.split() if w.isalnum())
+        words = set(w for w in clean.split() if w.isalnum() and len(w) > 1)
         return words
     
     def _stem(word: str) -> str:
@@ -283,8 +283,8 @@ def get_lease_by_tenant(tenant_name: str, db_path: str = DEFAULT_DB_PATH) -> Opt
     if not search_words:
         return None
     
-    # Filter out common stop words if query is longer
-    stop_words = {"inc", "ltd", "corp", "llc", "the"}
+    # Filter out common stop words
+    stop_words = {"inc", "ltd", "corp", "llc", "the", "and", "of"}
     filtered_search = {w for w in search_words if w not in stop_words}
     if filtered_search:
         search_words = filtered_search
@@ -293,6 +293,9 @@ def get_lease_by_tenant(tenant_name: str, db_path: str = DEFAULT_DB_PATH) -> Opt
     stemmed_search = {_stem(w) for w in search_words}
 
     leases = get_all_leases(db_path)
+    
+    best_match = None
+    best_score = 0.0
     
     for lease in leases:
         # Get DB words
@@ -306,22 +309,29 @@ def get_lease_by_tenant(tenant_name: str, db_path: str = DEFAULT_DB_PATH) -> Opt
         stemmed_db_tenant = {_stem(w) for w in tenant_words}
         stemmed_db_trade = {_stem(w) for w in trade_words}
         
-        # Check subset on STEMMED words
-        # "churchs" -> "church". "church" -> "church". Match!
-        if stemmed_search.issubset(stemmed_db_tenant) or stemmed_search.issubset(stemmed_db_trade):
-            return lease
-            
-        # Fallback for substring matches (e.g. "church" in "churchs")
-        # useful if words are concatenated
-        clean_tenant = "".join(tenant_words)
-        clean_trade = "".join(trade_words)
+        # Calculate overlap score (Jaccard-like)
+        all_db_words = stemmed_db_tenant | stemmed_db_trade
         
-        for w in stemmed_search:
-            # Check if stemmed search word is in the concatenated DB string
-            if w in clean_tenant or w in clean_trade:
-                return lease
+        if not all_db_words:
+            continue
+        
+        overlap = stemmed_search & all_db_words
+        
+        if not overlap:
+            continue
+        
+        # Score: percentage of search words matched
+        score = len(overlap) / len(stemmed_search)
+        
+        # Require at least 50% of the search words to match for short queries
+        # and at least 1 word for single-word queries
+        min_required = 0.5 if len(stemmed_search) > 1 else 1.0
+        
+        if score >= min_required and score > best_score:
+            best_match = lease
+            best_score = score
     
-    return None
+    return best_match
 
 
 def get_rent_schedule(lease_id: int, db_path: str = DEFAULT_DB_PATH) -> list[Dict[str, Any]]:

@@ -95,6 +95,12 @@ class IngestionHandler(FileSystemEventHandler):
                 existing.add(f.name)
         return existing
     
+    def forget_file(self, file_name: str):
+        """Remove a file from the startup_files set to allow re-ingestion."""
+        if file_name in self.startup_files:
+            self.startup_files.remove(file_name)
+            print(f"🧹 Removed {file_name} from startup/ignore list")
+    
     @property
     def pipeline(self) -> IngestionPipeline:
         """Lazy initialize the ingestion pipeline."""
