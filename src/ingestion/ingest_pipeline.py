@@ -257,16 +257,38 @@ class IngestionPipeline:
             print("\n🧠 Step 5/6: Generating embeddings...")
             texts_to_embed = [c.enriched_content for c in enriched_chunks]
             
-            # Batch embed with rate limiting
+            # Batch embed with rate limiting and error handling
             all_embeddings = []
+            failed_embedding_indices = []
+            
             for i in range(0, len(texts_to_embed), self.config.embedding_batch_size):
                 batch = texts_to_embed[i:i + self.config.embedding_batch_size]
-                batch_embeddings = self.embeddings.embed_documents(batch)
-                all_embeddings.extend(batch_embeddings)
-                print(f"   Embedded {min(i + self.config.embedding_batch_size, len(texts_to_embed))}/{len(texts_to_embed)}")
+                batch_indices = list(range(i, min(i + self.config.embedding_batch_size, len(texts_to_embed))))
+                
+                # Retry logic for embedding API calls
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        batch_embeddings = self.embeddings.embed_documents(batch)
+                        all_embeddings.extend(batch_embeddings)
+                        print(f"   Embedded {min(i + self.config.embedding_batch_size, len(texts_to_embed))}/{len(texts_to_embed)}")
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"   Warning: Embedding batch failed (attempt {attempt + 1}/{max_retries}): {e}")
+                            time.sleep(2 ** attempt)  # Exponential backoff
+                        else:
+                            print(f"   ERROR: Embedding batch {i//self.config.embedding_batch_size + 1} failed permanently: {e}")
+                            # Add placeholder embeddings to maintain index alignment
+                            placeholder = [0.0] * 768  # Standard embedding dimension
+                            all_embeddings.extend([placeholder] * len(batch))
+                            failed_embedding_indices.extend(batch_indices)
                 
                 if i + self.config.embedding_batch_size < len(texts_to_embed):
                     time.sleep(self.config.embedding_delay_seconds)
+            
+            if failed_embedding_indices:
+                print(f"\n   WARNING: {len(failed_embedding_indices)} chunks failed embedding and will have placeholder vectors!")
             
             # Step 6: Upload to Pinecone
             print("\n📤 Step 6/6: Uploading to Pinecone...")
@@ -282,15 +304,36 @@ class IngestionPipeline:
                     "metadata": metadata,
                 })
             
-            # Batch upsert to Pinecone
+            # Batch upsert to Pinecone with error handling
             batch_size = 100
+            failed_vectors = []
+            
             for i in range(0, len(vectors_to_upsert), batch_size):
                 batch = vectors_to_upsert[i:i + batch_size]
-                self.index.upsert(
-                    vectors=batch,
-                    namespace=self.config.pinecone_namespace,
-                )
-                print(f"   Uploaded {min(i + batch_size, len(vectors_to_upsert))}/{len(vectors_to_upsert)} vectors")
+                batch_ids = [v["id"] for v in batch]
+                
+                # Retry logic for resilience
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        self.index.upsert(
+                            vectors=batch,
+                            namespace=self.config.pinecone_namespace,
+                        )
+                        print(f"   Uploaded {min(i + batch_size, len(vectors_to_upsert))}/{len(vectors_to_upsert)} vectors")
+                        break  # Success, exit retry loop
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"   Warning: Batch {i//batch_size + 1} failed (attempt {attempt + 1}/{max_retries}): {e}")
+                            time.sleep(2 ** attempt)  # Exponential backoff
+                        else:
+                            print(f"   ERROR: Batch {i//batch_size + 1} failed permanently after {max_retries} attempts: {e}")
+                            failed_vectors.extend(batch_ids)
+            
+            # Report any failed uploads
+            if failed_vectors:
+                print(f"\n   WARNING: {len(failed_vectors)} vectors failed to upload!")
+                print(f"   Failed IDs: {failed_vectors[:5]}{'...' if len(failed_vectors) > 5 else ''}")
             
             # Save lease metadata to SQLite database
             print("\n💾 Saving metadata to database...")

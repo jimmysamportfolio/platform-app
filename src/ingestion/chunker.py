@@ -160,6 +160,16 @@ class DocumentChunker:
         Returns:
             True if the chunk is an orphan and should be discarded.
         """
+        # NEVER discard chunks containing definitions - these are critical
+        definition_markers = [
+            '" means', "' means", '" means', "' means",  # Various quote styles
+            'means:', 'shall mean', 'is defined as',
+            '"Common', '"Landlord', '"Tenant', '"Premises',  # Common legal terms
+        ]
+        for marker in definition_markers:
+            if marker.lower() in text.lower():
+                return False  # Preserve this chunk - it has a definition
+        
         # Remove markdown formatting for word count
         clean = re.sub(r'[#*_\-|]', ' ', text)
         words = clean.split()

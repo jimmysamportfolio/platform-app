@@ -24,8 +24,8 @@ SECONDARY_CHUNK_OVERLAP = 100
 ORPHAN_CHUNK_MIN_TOKENS = 25
 
 # --- Retrieval Configuration ---
-RETRIEVAL_K = 30  # Reduced from 25 for faster responses
-RERANK_TOP_N = 5  # Reduced from 5 for faster responses
+RETRIEVAL_K = 40  # Number of candidates to retrieve from vector store
+RERANK_TOP_N = 10  # More docs to handle definition-style queries
 VECTOR_NAMESPACE = "leases-test"  # Namespace where documents are indexed in Pinecone
 
 # --- Ingestion Configuration ---
