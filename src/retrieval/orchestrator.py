@@ -29,8 +29,47 @@ from retrieval.vector_store import LeaseVectorStore
 from retrieval.reranker import LeaseReranker
 from retrieval.generator import RAGGenerator
 from retrieval.analytics_handler import AnalyticsHandler
+from config.prompts import EXTRACTION_SYSTEM_PROMPT
+
+from pydantic import BaseModel, Field
+from typing import Optional, Literal
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.messages import SystemMessage, HumanMessage
 
 load_dotenv()
+
+
+class MetricExtraction(BaseModel):
+    """Structured extraction of user intent for lease analytics."""
+    
+    tenant_name: Optional[str] = Field(
+        description="The specific tenant name mentioned, if any. Extract exactly as stated."
+    )
+    
+    intent: Literal[
+        "deposit_amount", 
+        "base_rent", 
+        "rent_schedule", 
+        "lease_start", 
+        "lease_end", 
+        "term_years", 
+        "possession_date", 
+        "renewal_option", 
+        "permitted_use", 
+        "exclusive_use", 
+        "radius_restriction",
+        "premises_description",
+        "rentable_area_sqft",
+        "landlord_name",
+        "property_address",
+        "net_rent_aggregate", # "total rent" across portfolio
+        "deposit_aggregate", # "total deposit" across portfolio
+        "summary" # general summary
+    ] = Field(description="The specific data field the user is asking for.")
+    
+    date_filter: Optional[str] = Field(
+        description="A specific year or date mentioned for filtering (e.g., '2024')."
+    )
 
 
 @dataclass
@@ -118,60 +157,69 @@ class LeaseRAGOrchestrator:
             self._generator = RAGGenerator()
         return self._generator
     
-    def _extract_tenant_from_query(self, query: str) -> Optional[str]:
-        """Extract tenant/trade name from query using simple pattern matching."""
-        # Common patterns
-        patterns = [
-            r"for\s+([A-Za-z\'\.\s]+?)(?:\s*\?|$)",  # "for Church's Chicken?"
-            r"(?:Church'?s?\s*Chicken|H\.?\s*Sran|Starbucks)",  # Known trade names
-        ]
-        
-        # Check for known tenants
-        query_lower = query.lower()
-        if "church" in query_lower:
-            return "Church's Chicken"
-        if "sran" in query_lower:
-            return "H. Sran"
-        
-        return None
-    
+    def _extract_analytics_params(self, query: str) -> MetricExtraction:
+        """Use LLM to extract structured parameters from natural language query."""
+        try:
+            # Create extraction chain
+            llm_with_structure = self.router.llm.with_structured_output(MetricExtraction)
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", EXTRACTION_SYSTEM_PROMPT),
+                ("human", "{query}"),
+            ])
+            
+            chain = prompt | llm_with_structure
+            result = chain.invoke({"query": query})
+            
+            print(f"\n🧠 ANALYTICS DEBUG:\n  Query: '{query}'\n  Extracted Tenant: '{result.tenant_name}'\n  Extracted Intent: '{result.intent}'\n")
+            return result
+            
+        except Exception as e:
+            print(f"⚠️ Extraction failed: {e}. Defaulting to summary.")
+            return MetricExtraction(intent="summary", tenant_name=None)
+
     def _handle_analytics(self, query: str) -> RAGResponse:
         """
-        Handle analytics path queries using structured data (NO LLM).
-        
-        This is instant - no API calls!
+        Handle analytics path queries using structured data + LLM extraction.
         """
-        query_lower = query.lower()
-        tenant = self._extract_tenant_from_query(query)
+        # 1. Extract structured parameters (use LLM)
+        params = self._extract_analytics_params(query)
         
-        # Route to specific analytics method based on query content
-        if "deposit" in query_lower and tenant:
-            result = self.analytics.get_deposit_amount(tenant)
-        elif "term" in query_lower and tenant:
-            result = self.analytics.get_term(tenant)
-        elif "expir" in query_lower and tenant:
-            result = self.analytics.get_expiration(tenant)
-        elif "rent" in query_lower and tenant:
+        tenant = params.tenant_name
+        intent = params.intent
+        
+        # 2. Route to specific handler
+        if intent == "rent_schedule":
             result = self.analytics.get_rent_schedule(tenant)
-        elif "total" in query_lower and "deposit" in query_lower:
+        elif intent == "deposit_amount":
+            result = self.analytics.get_deposit_amount(tenant)
+        elif intent == "lease_start":
+            result = self.analytics.get_generic_field(tenant, "lease_start")
+        elif intent == "lease_end":
+            result = self.analytics.get_expiration(tenant)
+        elif intent == "term_years":
+            result = self.analytics.get_term(tenant)
+        elif intent == "net_rent_aggregate": # "total rent" -> average for now
+             result = self.analytics.get_average_rent_psf()
+        elif intent == "deposit_aggregate":
             result = self.analytics.get_total_deposit()
-        elif "average" in query_lower and "rent" in query_lower:
-            result = self.analytics.get_average_rent_psf()
-        elif "summary" in query_lower or "portfolio" in query_lower:
+        elif intent == "summary":
             result = self.analytics.get_portfolio_summary()
+        elif intent == "rentable_area_sqft":
+             result = self.analytics.get_generic_field(tenant, "rentable_area_sqft")
         else:
-            # Generic lookup - try deposit if tenant found
-            if tenant:
-                result = self.analytics.get_deposit_amount(tenant)
-            else:
-                result = self.analytics.get_portfolio_summary()
+             # Fallback for other fields (generic lookup)
+             if tenant:
+                 result = self.analytics.get_generic_field(tenant, intent)
+             else:
+                 result = self.analytics.get_portfolio_summary()
         
         return RAGResponse(
             query=query,
             answer=result.answer,
             route="analytics",
             sources=[{"type": "metadata_store", "path": "data/metadata_store.json"}],
-            metadata={"data": result.data, "query_type": result.query_type},
+            metadata={"data": result.data, "query_type": result.query_type, "intent": intent},
         )
     
     def _handle_retrieval(
@@ -238,9 +286,18 @@ class LeaseRAGOrchestrator:
         
         print(f"🔀 Route: {route.upper()}")
         
-        # Execute appropriate path
+        # Execute appropriate path with fallback
         if route == "analytics":
-            return self._handle_analytics(query)
+            # Try analytics first
+            analytics_response = self._handle_analytics(query)
+            
+            # Check if analytics was successful (has meaningful answer)
+            if "Could not find" not in analytics_response.answer and "No rent data" not in analytics_response.answer and "No leases in portfolio" not in analytics_response.answer:
+                return analytics_response
+            
+            # Fallback to retrieval if analytics failed
+            print(f"⚠️ Analytics path failed to find answer. Falling back to Retrieval path.")
+            return self._handle_retrieval(query, filter_dict)
         else:
             return self._handle_retrieval(query, filter_dict)
     

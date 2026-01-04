@@ -54,9 +54,15 @@ class AnalyticsHandler:
         """Normalize text for matching (handle different apostrophe types, etc.)."""
         if not text:
             return ""
-        # Normalize different apostrophe types to standard straight quote
-        text = text.replace("\u2019", "'").replace("\u2018", "'").replace("\u0060", "'")
-        return text.lower().strip()
+        # 1. Lowercase first
+        text = text.lower()
+        # 2. Normalize apostrophes (handle all unicode variants)
+        text = text.replace("\u2019", "'").replace("\u2018", "'").replace("\u0060", "'").replace("’", "'").replace("‘", "'")
+        # 3. Replace newlines and tabs with space
+        text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+        # 4. Collapse multiple spaces -> single space
+        text = " ".join(text.split())
+        return text.strip()
     
     def get_all_leases(self) -> List[Dict[str, Any]]:
         """Get all lease documents."""
@@ -72,8 +78,10 @@ class AnalyticsHandler:
         Returns:
             Lease data dict or None if not found.
         """
-        normalized = self._normalize_text(tenant_name)
-        return get_lease_by_tenant(normalized, self.db_path)
+        # Delegate to db specific word-set implementation
+        # Note: We duplicate logic here if we want memory-only filtering, 
+        # but db.py handles the actual logic now.
+        return get_lease_by_tenant(tenant_name, self.db_path)
     
     # --- Direct Value Lookups (No LLM) ---
     
@@ -119,6 +127,27 @@ class AnalyticsHandler:
                 )
         return AnalyticsResult(success=False, answer=f"Could not find expiration date for '{tenant_name}'.")
     
+    def get_generic_field(self, tenant_name: str, field: str) -> AnalyticsResult:
+        """Get any specific field from the lease record."""
+        lease = self.get_lease_by_tenant(tenant_name)
+        if lease:
+            value = lease.get(field)
+            if value is not None:
+                # Format dates and money if possible
+                display_value = str(value)
+                if isinstance(value, float) and "sqft" in field:
+                    display_value = f"{value:,.0f} sqft"
+                elif isinstance(value, float): # assume money for other floats
+                    display_value = f"${value:,.2f}"
+                
+                return AnalyticsResult(
+                    success=True,
+                    answer=f"The {field.replace('_', ' ')} for {lease.get('tenant_name')} is **{display_value}**.",
+                    data={"tenant": lease.get("tenant_name"), field: value},
+                    query_type="field_lookup"
+                )
+        return AnalyticsResult(success=False, answer=f"Could not find {field} for '{tenant_name}'.")
+
     def get_rent_schedule(self, tenant_name: str) -> AnalyticsResult:
         """Get rent schedule for a specific tenant."""
         lease = self.get_lease_by_tenant(tenant_name)

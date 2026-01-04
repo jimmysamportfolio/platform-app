@@ -244,11 +244,19 @@ def get_all_leases(db_path: str = DEFAULT_DB_PATH) -> list[Dict[str, Any]]:
         return [dict(row) for row in rows]
 
 
-def _normalize_apostrophes(text: str) -> str:
-    """Normalize different apostrophe types to standard straight quote."""
+def _normalize_text(text: str) -> str:
+    """Normalize text: apostrophes to straight quotes, remove newlines/excess spaces."""
     if not text:
         return ""
-    return text.replace("\u2019", "'").replace("\u2018", "'").replace("\u0060", "'")
+    # 1. Lowercase first
+    text = text.lower()
+    # 2. Normalize apostrophes (handle all unicode variants)
+    text = text.replace("\u2019", "'").replace("\u2018", "'").replace("\u0060", "'").replace("’", "'").replace("‘", "'")
+    # 3. Replace newlines and tabs with space
+    text = text.replace("\n", " ").replace("\r", " ").replace("\t", " ")
+    # 4. Collapse multiple spaces -> single space
+    text = " ".join(text.split())
+    return text.strip()
 
 
 def get_lease_by_tenant(tenant_name: str, db_path: str = DEFAULT_DB_PATH) -> Optional[Dict[str, Any]]:
@@ -261,22 +269,57 @@ def get_lease_by_tenant(tenant_name: str, db_path: str = DEFAULT_DB_PATH) -> Opt
     Returns:
         Lease dictionary or None.
     """
-    # Normalize the search term
-    search = _normalize_apostrophes(tenant_name.lower())
+    def _get_words(text: str) -> set[str]:
+        # Replace common punctuation with space to isolate words
+        clean = text.lower().replace("'", " ").replace("’", " ").replace(".", " ")
+        # Filter out very short words (like "s" from "church's") unless query is short
+        words = set(w for w in clean.split() if w.isalnum())
+        return words
     
-    # Fetch all leases and filter in Python (handles Unicode apostrophes properly)
+    def _stem(word: str) -> str:
+        return word.rstrip('s')
+
+    search_words = _get_words(tenant_name)
+    if not search_words:
+        return None
+    
+    # Filter out common stop words if query is longer
+    stop_words = {"inc", "ltd", "corp", "llc", "the"}
+    filtered_search = {w for w in search_words if w not in stop_words}
+    if filtered_search:
+        search_words = filtered_search
+
+    # Prepare stemmed search words
+    stemmed_search = {_stem(w) for w in search_words}
+
     leases = get_all_leases(db_path)
     
     for lease in leases:
-        # Check tenant name
-        tenant = _normalize_apostrophes((lease.get("tenant_name") or "").lower())
-        if search in tenant:
-            return lease
+        # Get DB words
+        tenant_db = lease.get("tenant_name") or ""
+        trade_db = lease.get("trade_name") or ""
         
-        # Check trade name
-        trade = _normalize_apostrophes((lease.get("trade_name") or "").lower())
-        if search in trade:
+        tenant_words = _get_words(tenant_db)
+        trade_words = _get_words(trade_db)
+        
+        # Stem DB words
+        stemmed_db_tenant = {_stem(w) for w in tenant_words}
+        stemmed_db_trade = {_stem(w) for w in trade_words}
+        
+        # Check subset on STEMMED words
+        # "churchs" -> "church". "church" -> "church". Match!
+        if stemmed_search.issubset(stemmed_db_tenant) or stemmed_search.issubset(stemmed_db_trade):
             return lease
+            
+        # Fallback for substring matches (e.g. "church" in "churchs")
+        # useful if words are concatenated
+        clean_tenant = "".join(tenant_words)
+        clean_trade = "".join(trade_words)
+        
+        for w in stemmed_search:
+            # Check if stemmed search word is in the concatenated DB string
+            if w in clean_tenant or w in clean_trade:
+                return lease
     
     return None
 

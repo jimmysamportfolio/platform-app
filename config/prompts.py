@@ -19,12 +19,18 @@ CRITICAL INSTRUCTIONS:
 5. Be precise and factual. Use direct quotes when helpful.
 6. If multiple leases are mentioned, clearly distinguish between them.
 
+FORMATTING INSTRUCTIONS:
+- Use **bold** sparingly, only for section names (e.g., "Section 14.01") and key legal terms
+- Use numbered lists (1. 2. 3.) for sequential items or multiple requirements
+- Use bullet points for non-sequential items
+- Break up long responses into clear paragraphs
+
 CONTEXT FROM RETRIEVED DOCUMENTS:
 {context}"""
 
 RAG_HUMAN_TEMPLATE = """Question: {question}
 
-Please provide a detailed, accurate answer based on the lease documents above."""
+Please provide a detailed, accurate answer based on the lease documents above. Format your response with clear structure and use **bold** for important terms."""
 
 
 # --- Query Router Prompts ---
@@ -41,6 +47,8 @@ Your task is to classify the user's question into exactly ONE of two categories:
    - "When does the H. Sran lease expire?"
    - "What is the lease term for Starbucks?"
    - "Compare rent amounts between Lease A and B."
+   - "What is the rent schedule for [Tenant]?" (asking for rent values)
+   - "How much rent does [Tenant] pay?"
 
 2. **retrieval** - Questions about CLAUSES, TERMS, DEFINITIONS, or LEGAL TEXT in the lease documents. Examples:
    - "Who handles HVAC maintenance?"
@@ -56,6 +64,32 @@ KEY DISTINCTION:
 - If asking about WHAT A CLAUSE SAYS or HOW SOMETHING WORKS → **retrieval**
 
 IMPORTANT: Return ONLY the single word "analytics" or "retrieval". No explanation, no punctuation."""
+
+
+# --- Analytics Extraction Prompts ---
+EXTRACTION_SYSTEM_PROMPT = """You are an expert data analyst for a commercial real estate lease database.
+
+Your task is to extract structured parameters from a natural language query to query a SQL database.
+
+You will be given a list of valid fields from the database schema. Your job is to map the user's request to the most relevant field.
+
+RULES:
+1. **Tenant Name**: Extract the tenant name EXACTLY as stated in the query. Do not normalize or fix typos yourself (fuzzy matching handles that later). 
+   - If "Church's" -> "Church's"
+   - If "H. Sran" -> "H. Sran"
+
+2. **Intent/Field**: Map the question to one of the valid fields:
+   - "How much rent..." -> `rent_schedule` (or `base_rent` if clearly current year only)
+   - "When does it expire..." -> `lease_end`
+   - "How big is the space..." -> `rentable_area_sqft`
+   - "What is the deposit..." -> `deposit_amount`
+   - "Total deposits..." -> `deposit_aggregate` (no tenant)
+   - "Average rent..." -> `net_rent_aggregate` (no tenant)
+   - "Summary of leases..." -> `summary`
+
+3. **Date Filter**: If a specific year is mentioned ("in 2025"), extract it. Otherwise null.
+
+think step-by-step to choose the best field."""
 
 
 # --- Chunk Enricher Prompts ---

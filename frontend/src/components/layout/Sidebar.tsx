@@ -6,8 +6,7 @@ import { MessageCircle, BarChart3, FileText } from "lucide-react";
 
 const navItems = [
     { name: "Q&A", href: "/qa", icon: MessageCircle },
-    { name: "Analytics", href: "/analytics", icon: BarChart3 },
-    { name: "Documents", href: "/documents", icon: FileText },
+    { name: "Dashboard", href: "/analytics", icon: BarChart3 },
 ];
 
 export function Sidebar() {

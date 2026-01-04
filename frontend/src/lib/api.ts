@@ -67,13 +67,17 @@ export interface PortfolioSummary {
         avg_rent_psf: number;
     }>;
     lease_breakdown: Array<{
-        tenant_name: string;
+        id: number;
+        tenant: string;
         trade_name: string | null;
-        property_address: string;
-        rentable_area_sqft: number;
-        expiration_date: string;
-        term_years: number;
-        deposit_amount: number;
+        property: string;
+        sqft: number | null;
+        start_date: string | null;
+        end_date: string | null;
+        term_years: number | null;
+        deposit: number | null;
+        base_rent: number | null;
+        rate_psf: number | null;
     }>;
 }
 
