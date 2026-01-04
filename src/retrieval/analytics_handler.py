@@ -129,6 +129,13 @@ class AnalyticsHandler:
     
     def get_generic_field(self, tenant_name: str, field: str) -> AnalyticsResult:
         """Get any specific field from the lease record."""
+        # Handle case where no tenant was specified
+        if not tenant_name:
+            return AnalyticsResult(
+                success=False, 
+                answer=f"Please specify which tenant you're asking about to get the {field.replace('_', ' ')}."
+            )
+        
         lease = self.get_lease_by_tenant(tenant_name)
         if lease:
             value = lease.get(field)
@@ -150,6 +157,12 @@ class AnalyticsHandler:
 
     def get_rent_schedule(self, tenant_name: str) -> AnalyticsResult:
         """Get rent schedule for a specific tenant."""
+        if not tenant_name:
+            return AnalyticsResult(
+                success=False, 
+                answer="Please specify which tenant you're asking about to get the rent schedule."
+            )
+        
         lease = self.get_lease_by_tenant(tenant_name)
         if lease:
             schedule = get_rent_schedule(lease["id"], self.db_path)
