@@ -229,7 +229,7 @@ class LeaseVectorStore:
                 vector=dummy_embedding,
                 top_k=10000,  # Get as many as possible
                 namespace=self.namespace,
-                filter={"source_document": {"$eq": document_name}},
+                filter={"document": {"$eq": document_name}},
                 include_metadata=False,
             )
             

@@ -18,7 +18,7 @@ from dataclasses import dataclass
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from dotenv import load_dotenv
-from utils.db import get_connection, get_all_leases, get_lease_by_tenant, get_rent_schedule
+from utils.db import get_connection, get_all_leases, get_lease_by_tenant, get_rent_schedule, DEFAULT_DB_PATH
 
 load_dotenv()
 
@@ -39,7 +39,7 @@ class AnalyticsHandler:
     **NO LLM CALLS** - Returns structured data directly for fast, rate-limit-free responses.
     """
     
-    def __init__(self, db_path: str = "data/leases.db"):
+    def __init__(self, db_path: str = DEFAULT_DB_PATH):
         """
         Initialize the analytics handler.
         

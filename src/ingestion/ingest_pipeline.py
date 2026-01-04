@@ -33,6 +33,15 @@ from ingestion.chunker import DocumentChunker, Chunk
 from ingestion.enricher import get_enricher, EnrichedChunk
 from ingestion.extractor import LeaseExtractor, Lease
 from utils.db import init_db, insert_lease
+from config.settings import (
+    VECTOR_NAMESPACE,
+    EMBEDDING_BATCH_SIZE,
+    EMBEDDING_DELAY_SECONDS,
+    ENRICHMENT_BATCH_SIZE,
+    ENRICHMENT_DELAY_SECONDS,
+    DEFAULT_EMBEDDING_MODEL,
+    METADATA_STORE_PATH,
+)
 
 load_dotenv()
 
@@ -42,19 +51,19 @@ class PipelineConfig:
     """Configuration for the ingestion pipeline."""
     # Enrichment settings
     enable_enrichment: bool = True
-    enrichment_batch_size: int = 5
-    enrichment_delay_seconds: float = 12.0  # ~5 batches/min to stay under 15 RPM
+    enrichment_batch_size: int = ENRICHMENT_BATCH_SIZE
+    enrichment_delay_seconds: float = ENRICHMENT_DELAY_SECONDS
     
     # Embedding settings
-    embedding_model: str = "models/text-embedding-004"
-    embedding_batch_size: int = 50
-    embedding_delay_seconds: float = 0.5
+    embedding_model: str = DEFAULT_EMBEDDING_MODEL
+    embedding_batch_size: int = EMBEDDING_BATCH_SIZE
+    embedding_delay_seconds: float = EMBEDDING_DELAY_SECONDS
     
     # Pinecone settings
-    pinecone_namespace: str = "leases"
+    pinecone_namespace: str = VECTOR_NAMESPACE
     
     # Output settings
-    metadata_store_path: str = "data/metadata_store.json"
+    metadata_store_path: str = METADATA_STORE_PATH
 
 
 @dataclass

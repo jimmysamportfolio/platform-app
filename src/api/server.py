@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from retrieval.orchestrator import LeaseRAGOrchestrator
 from analysis.portfolio import PortfolioAnalyzer
-from utils.db import get_all_leases, get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH
+from utils.db import get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH
 
 # File Watcher Imports
 from watchdog.observers import Observer

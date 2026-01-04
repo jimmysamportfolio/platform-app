@@ -8,14 +8,18 @@ This module is responsible for:
 - Safe connection handling with context managers
 """
 
+import os
+import sys
 import sqlite3
 from pathlib import Path
 from typing import Dict, Any, Optional
 from contextlib import contextmanager
 from datetime import date
 
-# Default database path
-DEFAULT_DB_PATH = "data/leases.db"
+# Add project root to path for config imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+from config.settings import DEFAULT_DB_PATH
 
 
 @contextmanager
