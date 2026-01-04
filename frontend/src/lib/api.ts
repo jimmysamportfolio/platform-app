@@ -68,6 +68,7 @@ export interface PortfolioSummary {
     }>;
     lease_breakdown: Array<{
         id: number;
+        document_name: string;
         tenant: string;
         trade_name: string | null;
         property: string;
@@ -115,4 +116,16 @@ export interface DocumentContent {
 export async function getDocumentContent(documentName: string): Promise<DocumentContent> {
     const encodedName = encodeURIComponent(documentName);
     return apiFetch<DocumentContent>(`/api/documents/${encodedName}/content`);
+}
+
+export interface DeleteResponse {
+    status: string;
+    message: string;
+}
+
+export async function deleteDocument(documentName: string): Promise<DeleteResponse> {
+    const encodedName = encodeURIComponent(documentName);
+    return apiFetch<DeleteResponse>(`/api/documents/${encodedName}`, {
+        method: "DELETE",
+    });
 }

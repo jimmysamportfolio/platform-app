@@ -210,6 +210,7 @@ class PortfolioAnalyzer:
             cursor.execute("""
                 SELECT 
                     l.id,
+                    l.document_name,
                     l.tenant_name,
                     l.trade_name,
                     l.property_address,
@@ -229,6 +230,7 @@ class PortfolioAnalyzer:
             return [
                 {
                     "id": row["id"],
+                    "document_name": row["document_name"],
                     "tenant": row["tenant_name"],
                     "trade_name": row["trade_name"],
                     "property": row["property_address"],

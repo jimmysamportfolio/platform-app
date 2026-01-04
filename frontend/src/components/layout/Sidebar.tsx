@@ -15,7 +15,7 @@ export function Sidebar() {
     return (
         <aside className="w-56 h-screen flex flex-col bg-[var(--sidebar)] border-r border-[var(--sidebar-border)]">
             {/* Logo/Brand */}
-            <div className="px-4 py-5 border-b border-[var(--sidebar-border)]">
+            <div className="h-14 flex items-center px-4 border-b border-[var(--sidebar-border)]">
                 <h1 className="text-base font-semibold text-[var(--sidebar-foreground)]">
                     Platform Properties
                 </h1>

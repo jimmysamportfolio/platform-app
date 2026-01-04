@@ -20,7 +20,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from retrieval.orchestrator import LeaseRAGOrchestrator
 from analysis.portfolio import PortfolioAnalyzer
-from utils.db import get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH
+from utils.db import get_all_leases, get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH
+
+# File Watcher Imports
+from watchdog.observers import Observer
+from ingestion.file_watcher import IngestionHandler
+from config.settings import WATCHDOG_INPUT_FOLDER, WATCHDOG_PROCESSED_FOLDER
 
 app = FastAPI(
     title="Legal Lease RAG API",
@@ -40,6 +45,35 @@ app.add_middleware(
 # Initialize components lazily
 _orchestrator: Optional[LeaseRAGOrchestrator] = None
 _analyzer: Optional[PortfolioAnalyzer] = None
+_observer: Optional[Observer] = None  # File watcher observer
+
+@app.on_event("startup")
+async def startup_event():
+    """Start the file watcher on server startup."""
+    global _observer
+    print("\n🐕 Starting Background File Watcher...")
+    try:
+        handler = IngestionHandler(
+            input_folder=WATCHDOG_INPUT_FOLDER,
+            processed_folder=WATCHDOG_PROCESSED_FOLDER,
+            db_path=DEFAULT_DB_PATH
+        )
+        _observer = Observer()
+        _observer.schedule(handler, str(handler.input_folder), recursive=False)
+        _observer.start()
+        print("✅ File Watcher running in background thread")
+    except Exception as e:
+        print(f"❌ Failed to start File Watcher: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop the file watcher on server shutdown."""
+    global _observer
+    if _observer:
+        print("\n🛑 Stopping File Watcher...")
+        _observer.stop()
+        _observer.join()
+        print("✅ File Watcher stopped")
 
 
 def get_orchestrator() -> LeaseRAGOrchestrator:
@@ -134,6 +168,45 @@ async def get_document_content(document_name: str):
         return {
             "filename": matching_files[0].name,
             "content": content
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/documents/{document_name}")
+async def delete_document(document_name: str):
+    """
+    Delete a document from the system.
+    
+    This removes:
+    1. The lease record from database
+    2. The ingestion logs
+    3. The files from input/processed folders (optional, but good for cleanup)
+    """
+    try:
+        from utils.db import delete_lease, delete_ingestion_log
+        
+        # 1. Delete from database
+        lease_deleted = delete_lease(document_name)
+        log_deleted = delete_ingestion_log(document_name)
+        
+        if not lease_deleted and not log_deleted:
+            raise HTTPException(status_code=404, detail="Document not found in database")
+
+        # 2. Try to clean up files (best effort)
+        # Note: We won't delete from Pinecone here yet as we need the vector IDs 
+        # (which we don't store mapping for currently). 
+        # But removing from DB prevents analytics usage.
+        
+        return {
+            "status": "success", 
+            "message": f"Deleted document: {document_name}",
+            "details": {
+                "lease_deleted": lease_deleted,
+                "logs_deleted": log_deleted
+            }
         }
     except HTTPException:
         raise

@@ -26,8 +26,8 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { getPortfolioSummary, getDocumentContent, PortfolioSummary } from "@/lib/api";
-import { TrendingUp, Search, SlidersHorizontal, ArrowUpDown, ChevronDown } from "lucide-react";
+import { getPortfolioSummary, getDocumentContent, deleteDocument, PortfolioSummary } from "@/lib/api";
+import { TrendingUp, Search, SlidersHorizontal, ArrowUpDown, ChevronDown, Trash2 } from "lucide-react";
 
 function formatCurrency(value: number | null | undefined): string {
     if (value === null || value === undefined || isNaN(value)) return "$0";
@@ -61,17 +61,23 @@ export default function AnalyticsPage() {
     const [viewingDoc, setViewingDoc] = useState<{ filename: string; content: string } | null>(null);
     const [viewerLoading, setViewerLoading] = useState(false);
 
-    useEffect(() => {
-        async function fetchData() {
-            try {
-                const summary = await getPortfolioSummary();
-                setData(summary);
-            } catch (err) {
-                setError(err instanceof Error ? err.message : "Failed to load data");
-            } finally {
-                setIsLoading(false);
-            }
+    // Delete state
+    const [deleteOpen, setDeleteOpen] = useState(false);
+    const [deletingDoc, setDeletingDoc] = useState<{ name: string; display: string } | null>(null);
+
+    async function fetchData() {
+        setIsLoading(true);
+        try {
+            const summary = await getPortfolioSummary();
+            setData(summary);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Failed to load data");
+        } finally {
+            setIsLoading(false);
         }
+    }
+
+    useEffect(() => {
         fetchData();
     }, []);
 
@@ -125,16 +131,36 @@ export default function AnalyticsPage() {
         setViewerLoading(true);
         setViewerOpen(true);
         try {
-            const docName = lease.trade_name || lease.tenant;
-            const content = await getDocumentContent(docName);
+            // Use precise document name for lookup
+            const content = await getDocumentContent(lease.document_name);
             setViewingDoc(content);
         } catch (err) {
             setViewingDoc({
-                filename: lease.trade_name || lease.tenant,
+                filename: lease.document_name,
                 content: `Error loading document: ${err instanceof Error ? err.message : "Unknown error"}`,
             });
         } finally {
             setViewerLoading(false);
+        }
+    };
+
+    const handleDeleteClick = (e: React.MouseEvent, lease: PortfolioSummary["lease_breakdown"][0]) => {
+        e.stopPropagation(); // Prevent row click
+
+        // Use the exact document name for deletion
+        setDeletingDoc({ name: lease.document_name, display: lease.trade_name || lease.tenant });
+        setDeleteOpen(true);
+    };
+
+    const confirmDelete = async () => {
+        if (!deletingDoc) return;
+        try {
+            await deleteDocument(deletingDoc.name);
+            setDeleteOpen(false);
+            setDeletingDoc(null);
+            fetchData(); // Refresh list
+        } catch (err) {
+            alert("Failed to delete: " + (err instanceof Error ? err.message : "Unknown error"));
         }
     };
 
@@ -155,6 +181,7 @@ export default function AnalyticsPage() {
     }
 
     if (!data) return null;
+
 
     return (
         <ScrollArea className="h-full">
@@ -283,12 +310,13 @@ export default function AnalyticsPage() {
                                     <TableHead className="text-right">Term</TableHead>
                                     <TableHead className="text-right">Deposit</TableHead>
                                     <TableHead>Expiration</TableHead>
+                                    <TableHead className="w-[50px]"></TableHead>
                                 </TableRow>
                             </TableHeader>
                             <TableBody>
                                 {filteredLeases.length === 0 ? (
                                     <TableRow>
-                                        <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                                        <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                                             No leases found
                                         </TableCell>
                                     </TableRow>
@@ -296,7 +324,7 @@ export default function AnalyticsPage() {
                                     filteredLeases.map((lease) => (
                                         <TableRow
                                             key={lease.id}
-                                            className="cursor-pointer hover:bg-muted/50 transition-colors"
+                                            className="cursor-pointer hover:bg-muted/50 transition-colors group"
                                             onClick={() => handleRowClick(lease)}
                                         >
                                             <TableCell className="font-medium">
@@ -315,17 +343,27 @@ export default function AnalyticsPage() {
                                                 {formatCurrency(lease.deposit)}
                                             </TableCell>
                                             <TableCell>{lease.end_date || "-"}</TableCell>
+                                            <TableCell>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="opacity-0 group-hover:opacity-100 h-8 w-8 text-muted-foreground hover:text-destructive"
+                                                    onClick={(e) => handleDeleteClick(e, lease)}
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </Button>
+                                            </TableCell>
                                         </TableRow>
                                     ))
                                 )}
                             </TableBody>
-                        </Table>
-                    </CardContent>
-                </Card>
-            </div>
+                        </Table >
+                    </CardContent >
+                </Card >
+            </div >
 
             {/* Document Viewer Dialog */}
-            <Dialog open={viewerOpen} onOpenChange={setViewerOpen}>
+            < Dialog open={viewerOpen} onOpenChange={setViewerOpen} >
                 <DialogContent className="max-w-4xl max-h-[85vh]">
                     <DialogHeader>
                         <DialogTitle className="text-base font-medium">
@@ -342,7 +380,23 @@ export default function AnalyticsPage() {
                         )}
                     </ScrollArea>
                 </DialogContent>
-            </Dialog>
-        </ScrollArea>
+            </Dialog >
+
+            {/* Delete Confirmation Dialog */}
+            < Dialog open={deleteOpen} onOpenChange={setDeleteOpen} >
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Delete Lease?</DialogTitle>
+                    </DialogHeader>
+                    <div className="py-4 text-sm text-muted-foreground">
+                        Are you sure you want to delete the lease for <span className="font-medium text-foreground">{deletingDoc?.display}</span>? This action cannot be undone.
+                    </div>
+                    <div className="flex justify-end gap-2">
+                        <Button variant="outline" onClick={() => setDeleteOpen(false)}>Cancel</Button>
+                        <Button variant="destructive" onClick={confirmDelete}>Delete</Button>
+                    </div>
+                </DialogContent>
+            </Dialog >
+        </ScrollArea >
     );
 }
