@@ -30,7 +30,7 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 # Import internal modules
 from ingestion.parser import DocumentParser
 from ingestion.chunker import DocumentChunker, Chunk
-from ingestion.enricher import ChunkEnricher, EnrichedChunk
+from ingestion.enricher import get_enricher, EnrichedChunk
 from ingestion.extractor import LeaseExtractor, Lease
 from utils.db import init_db, insert_lease
 
@@ -91,10 +91,11 @@ class IngestionPipeline:
         # Initialize components
         self.parser = DocumentParser()
         self.chunker = DocumentChunker()
-        self.enricher = ChunkEnricher(
-            batch_size=self.config.enrichment_batch_size,
-            rate_limit_delay=self.config.enrichment_delay_seconds,
-        )
+        
+        # Get enricher based on ENRICHMENT_MODE in settings.py
+        # Options: 'llm' (expensive), 'rule-based' (free), 'none' (skip)
+        self.enricher = get_enricher()
+        
         self.extractor = LeaseExtractor()
         
         # Initialize embeddings
@@ -108,7 +109,8 @@ class IngestionPipeline:
         self.index = self.pc.Index(os.getenv("PINECONE_INDEX_NAME"))
         
         print(f"✅ Pipeline initialized with config:")
-        print(f"   Enrichment: {'ENABLED' if self.config.enable_enrichment else 'DISABLED'}")
+        enricher_type = type(self.enricher).__name__ if self.enricher else "None"
+        print(f"   Enrichment: {enricher_type}")
         print(f"   Namespace: {self.config.pinecone_namespace}")
     
     def _validate_env_vars(self):

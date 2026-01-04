@@ -205,6 +205,53 @@ class LeaseVectorStore:
             List of LangChain Document objects.
         """
         return self.search(query, k=k, filter_dict={"clause_type": clause_type})
+    
+    def delete_by_document(self, document_name: str) -> int:
+        """
+        Delete all vectors associated with a specific document.
+        
+        Args:
+            document_name: Name of the source document to delete.
+            
+        Returns:
+            Number of vectors deleted.
+        """
+        try:
+            # Query for vector IDs with this document name
+            # Pinecone doesn't support direct delete by metadata filter,
+            # so we need to find the IDs first using a dummy query
+            
+            # Get a sample embedding for the query
+            dummy_embedding = self.embeddings.embed_query("document")
+            
+            # Query with filter to get matching vector IDs
+            results = self.index.query(
+                vector=dummy_embedding,
+                top_k=10000,  # Get as many as possible
+                namespace=self.namespace,
+                filter={"source_document": {"$eq": document_name}},
+                include_metadata=False,
+            )
+            
+            if not results.matches:
+                print(f"⚠️ No vectors found for document: {document_name}")
+                return 0
+            
+            # Extract vector IDs
+            vector_ids = [match.id for match in results.matches]
+            
+            # Delete the vectors
+            self.index.delete(
+                ids=vector_ids,
+                namespace=self.namespace,
+            )
+            
+            print(f"✅ Deleted {len(vector_ids)} vectors for: {document_name}")
+            return len(vector_ids)
+            
+        except Exception as e:
+            print(f"❌ Error deleting vectors: {e}")
+            raise
 
 
 # --- Test Block ---

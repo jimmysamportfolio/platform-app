@@ -93,6 +93,20 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             )
         """)
         
+        # Create ingestion logs table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS ingestion_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_name TEXT NOT NULL,
+                status TEXT NOT NULL,
+                chunks_processed INTEGER DEFAULT 0,
+                vectors_uploaded INTEGER DEFAULT 0,
+                processing_time_seconds REAL DEFAULT 0.0,
+                error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
         print(f"✅ Database initialized: {db_path}")
 
 
@@ -286,6 +300,144 @@ def get_rent_schedule(lease_id: int, db_path: str = DEFAULT_DB_PATH) -> list[Dic
         """, (lease_id,))
         rows = cursor.fetchall()
         return [dict(row) for row in rows]
+
+
+def delete_lease(document_name: str, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    Delete a lease and its rent schedule from the database.
+    
+    Args:
+        document_name: Name of the document to delete.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        True if deleted, False if not found.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        
+        # Get lease ID first
+        cursor.execute("SELECT id FROM leases WHERE document_name = ?", (document_name,))
+        row = cursor.fetchone()
+        
+        if not row:
+            return False
+        
+        lease_id = row["id"]
+        
+        # Delete rent schedule (foreign key cascade should handle this, but be explicit)
+        cursor.execute("DELETE FROM rent_schedule WHERE lease_id = ?", (lease_id,))
+        
+        # Delete lease
+        cursor.execute("DELETE FROM leases WHERE id = ?", (lease_id,))
+        
+        print(f"✅ Deleted lease: {document_name}")
+        return True
+
+
+def delete_ingestion_log(document_name: str, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    Delete ingestion logs for a document.
+    
+    Args:
+        document_name: Name of the document.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        True if any logs deleted, False otherwise.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM ingestion_logs WHERE document_name = ?", (document_name,))
+        deleted = cursor.rowcount > 0
+        if deleted:
+            print(f"✅ Deleted ingestion logs for: {document_name}")
+        return deleted
+
+
+def log_ingestion(
+    document_name: str,
+    status: str,
+    chunks_processed: int = 0,
+    vectors_uploaded: int = 0,
+    processing_time_seconds: float = 0.0,
+    error_message: str = None,
+    db_path: str = DEFAULT_DB_PATH,
+) -> int:
+    """
+    Log an ingestion event to the database.
+    
+    Args:
+        document_name: Name of the processed document.
+        status: Status of the ingestion ('success', 'failed', 'skipped').
+        chunks_processed: Number of chunks processed.
+        vectors_uploaded: Number of vectors uploaded to Pinecone.
+        processing_time_seconds: Time taken to process.
+        error_message: Error message if failed.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        The ID of the inserted log entry.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO ingestion_logs (
+                document_name, status, chunks_processed, vectors_uploaded,
+                processing_time_seconds, error_message
+            ) VALUES (?, ?, ?, ?, ?, ?)
+        """, (
+            document_name,
+            status,
+            chunks_processed,
+            vectors_uploaded,
+            processing_time_seconds,
+            error_message,
+        ))
+        return cursor.lastrowid
+
+
+def get_ingestion_logs(limit: int = 50, db_path: str = DEFAULT_DB_PATH) -> list[Dict[str, Any]]:
+    """
+    Get recent ingestion logs.
+    
+    Args:
+        limit: Maximum number of logs to return.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        List of log dictionaries, most recent first.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM ingestion_logs 
+            ORDER BY created_at DESC 
+            LIMIT ?
+        """, (limit,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+def is_document_processed(document_name: str, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """
+    Check if a document has been successfully processed.
+    
+    Args:
+        document_name: Name of the document to check.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        True if document was successfully processed, False otherwise.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id FROM ingestion_logs 
+            WHERE document_name = ? AND status = 'success'
+            LIMIT 1
+        """, (document_name,))
+        return cursor.fetchone() is not None
 
 
 # --- Test Block ---
