@@ -34,6 +34,10 @@ ENRICHMENT_DELAY_SECONDS = 12.0  # ~5 batches/min to stay under 15 RPM
 EMBEDDING_BATCH_SIZE = 50
 EMBEDDING_DELAY_SECONDS = 0.5
 
+# --- Enrichment Mode ---
+# Options: 'llm' (uses Gemini API - expensive), 'rule-based' (free), 'none' (skip enrichment)
+ENRICHMENT_MODE = "rule-based"  # Recommended: 'rule-based' for cost savings
+
 # --- Database Configuration ---
 DEFAULT_DB_PATH = "data/leases.db"
 METADATA_STORE_PATH = "data/metadata_store.json"
@@ -56,3 +60,8 @@ CLAUSE_TYPES = [
     "parties_recitals",
     "other"
 ]
+
+# --- Watchdog Configuration ---
+WATCHDOG_INPUT_FOLDER = "input"
+WATCHDOG_PROCESSED_FOLDER = "processed"
+WATCHDOG_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".md"}

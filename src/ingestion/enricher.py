@@ -322,6 +322,172 @@ class ChunkEnricher:
         return asyncio.run(self.enrich_chunks_async(chunks, source_document))
 
 
+class RuleBasedEnricher:
+    """
+    Free, fast enricher that uses regex patterns instead of LLM.
+    
+    Extracts clause type and entities from document headers and content
+    without making any API calls.
+    """
+    
+    # Mapping of keywords to clause types
+    CLAUSE_PATTERNS = {
+        "definitions": ["definition", "defined terms", "interpretation"],
+        "rent_payment": ["rent", "base rent", "additional rent", "payment", "lease fee"],
+        "security_deposit": ["security deposit", "deposit"],
+        "maintenance_repairs": ["maintenance", "repair", "hvac", "janitorial", "common area"],
+        "insurance": ["insurance", "liability", "indemnity coverage"],
+        "default_remedies": ["default", "breach", "remedy", "remedies", "cure"],
+        "termination": ["termination", "terminate", "expiration", "early termination"],
+        "assignment_subletting": ["assignment", "subletting", "sublet", "transfer"],
+        "use_restrictions": ["use", "permitted use", "exclusive use", "restriction"],
+        "environmental": ["environmental", "hazardous", "toxic"],
+        "indemnification": ["indemnification", "indemnify", "hold harmless"],
+        "general_provisions": ["notice", "governing law", "waiver", "miscellaneous", "general"],
+        "schedules_exhibits": ["schedule", "exhibit", "appendix", "attachment"],
+        "parties_recitals": ["parties", "recital", "whereas", "landlord", "tenant", "lessor", "lessee"],
+    }
+    
+    # Regex patterns for entity extraction
+    ENTITY_PATTERNS = {
+        "money": r'\$[\d,]+(?:\.\d{2})?',
+        "percentage": r'\d+(?:\.\d+)?%',
+        "date": r'\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b',
+        "sqft": r'[\d,]+\s*(?:square feet|sq\.?\s*ft\.?|sf)',
+    }
+    
+    def __init__(self, doc_title: str = "Commercial Lease Agreement"):
+        """Initialize the rule-based enricher."""
+        self.doc_title = doc_title
+        print(f"✅ RuleBasedEnricher initialized (no API calls)")
+    
+    def _detect_clause_type(self, content: str, metadata: dict) -> str:
+        """Detect clause type from headers and content."""
+        search_text = ""
+        if metadata.get("article"):
+            search_text += metadata["article"].lower() + " "
+        if metadata.get("section"):
+            search_text += metadata["section"].lower() + " "
+        search_text += content[:200].lower()
+        
+        for clause_type, keywords in self.CLAUSE_PATTERNS.items():
+            for keyword in keywords:
+                if keyword in search_text:
+                    return clause_type
+        return "other"
+    
+    def _extract_entities(self, content: str) -> List[str]:
+        """Extract entities using regex patterns."""
+        import re
+        entities = []
+        for entity_type, pattern in self.ENTITY_PATTERNS.items():
+            matches = re.findall(pattern, content, re.IGNORECASE)
+            for match in matches[:3]:
+                entities.append(f"{entity_type}: {match}")
+        return entities[:10]
+    
+    def _generate_summary(self, content: str, metadata: dict, clause_type: str) -> str:
+        """Generate a simple contextual summary from headers."""
+        parts = []
+        if metadata.get("article"):
+            parts.append(metadata["article"])
+        if metadata.get("section"):
+            parts.append(metadata["section"])
+        
+        if parts:
+            header = " - ".join(parts)
+            return f"This section covers {header} ({clause_type.replace('_', ' ')})."
+        elif clause_type != "other":
+            return f"This section covers {clause_type.replace('_', ' ')} provisions."
+        return "This section is part of the lease agreement."
+    
+    def _generate_tags(self, clause_type: str, entities: List[str]) -> List[str]:
+        """Generate semantic tags from clause type and entities."""
+        tags = [clause_type]
+        for entity in entities:
+            if entity.startswith("money:"):
+                tags.append("financial_terms")
+            elif entity.startswith("date:"):
+                tags.append("dates")
+            elif entity.startswith("sqft:"):
+                tags.append("space_requirements")
+        return list(set(tags))[:5]
+    
+    def enrich_chunk(
+        self,
+        content: str,
+        metadata: dict,
+        token_count: int,
+        chunk_index: int = 0,
+        source_document: str = "",
+        char_start: int = 0,
+        char_end: int = 0,
+        page_numbers: Optional[List[int]] = None,
+    ) -> EnrichedChunk:
+        """Enrich a single chunk using rule-based extraction (no API calls)."""
+        clause_type = self._detect_clause_type(content, metadata)
+        entities = self._extract_entities(content)
+        summary = self._generate_summary(content, metadata, clause_type)
+        tags = self._generate_tags(clause_type, entities)
+        source_section = metadata.get("article", "") or metadata.get("section", "")
+        
+        return EnrichedChunk(
+            content=content,
+            original_metadata=metadata,
+            token_count=token_count,
+            chunk_index=chunk_index,
+            source_document=source_document,
+            source_section=source_section,
+            char_start=char_start,
+            char_end=char_end,
+            page_numbers=page_numbers or [],
+            contextual_summary=summary,
+            semantic_tags=tags,
+            key_entities=entities,
+            clause_type=clause_type,
+        )
+    
+    def enrich_chunks(self, chunks: List, source_document: str = "") -> List[EnrichedChunk]:
+        """Enrich multiple chunks (instant, no rate limiting needed)."""
+        enriched = []
+        for i, chunk in enumerate(chunks):
+            enriched_chunk = self.enrich_chunk(
+                content=chunk.content,
+                metadata=chunk.metadata,
+                token_count=chunk.token_count,
+                chunk_index=i,
+                source_document=source_document,
+            )
+            enriched.append(enriched_chunk)
+        return enriched
+
+
+def get_enricher(mode: str = None, doc_title: str = "Commercial Lease Agreement"):
+    """
+    Factory function to get the appropriate enricher based on mode.
+    
+    Args:
+        mode: 'llm', 'rule-based', or 'none'. Defaults to ENRICHMENT_MODE from settings.
+        doc_title: Document title for context.
+        
+    Returns:
+        ChunkEnricher, RuleBasedEnricher, or None.
+    """
+    from config.settings import ENRICHMENT_MODE
+    
+    mode = mode or ENRICHMENT_MODE
+    
+    if mode == "llm":
+        return ChunkEnricher(doc_title=doc_title)
+    elif mode == "rule-based":
+        return RuleBasedEnricher(doc_title=doc_title)
+    elif mode == "none":
+        return None
+    else:
+        print(f"⚠️ Unknown enrichment mode '{mode}', defaulting to rule-based")
+        return RuleBasedEnricher(doc_title=doc_title)
+
+
 # --- Test Block ---
 if __name__ == "__main__":
     import sys
