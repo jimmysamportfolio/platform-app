@@ -31,8 +31,8 @@ from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from ingestion.parser import DocumentParser
 from ingestion.chunker import DocumentChunker, Chunk
 from ingestion.enricher import get_enricher, EnrichedChunk
-from ingestion.extractor import LeaseExtractor, Lease
-from utils.db import init_db, insert_lease
+from ingestion.extractor import LeaseExtractor, Lease, ClauseExtractor
+from utils.db import init_db, insert_lease, insert_clauses
 from config.settings import (
     VECTOR_NAMESPACE,
     EMBEDDING_BATCH_SIZE,
@@ -339,6 +339,19 @@ class IngestionPipeline:
             print("\n💾 Saving metadata to database...")
             lease_id = insert_lease(lease.model_dump(mode="json"), document_name)
             print(f"📁 Lease saved to database (ID: {lease_id})")
+            
+            # Step 7: Extract clauses for comparison tool
+            print("\n📋 Step 7/7: Extracting clause summaries...")
+            try:
+                clause_extractor = ClauseExtractor()
+                clauses = clause_extractor.extract_clauses(full_text)
+                if clauses:
+                    num_clauses = insert_clauses(lease_id, clauses)
+                    print(f"   Extracted {num_clauses} clause summaries")
+                else:
+                    print("   No clauses extracted")
+            except Exception as clause_err:
+                print(f"   ⚠️ Clause extraction failed (non-fatal): {clause_err}")
             
             processing_time = time.time() - start_time
             

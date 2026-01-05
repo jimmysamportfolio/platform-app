@@ -129,3 +129,46 @@ export async function deleteDocument(documentName: string): Promise<DeleteRespon
         method: "DELETE",
     });
 }
+
+// --- Clause Comparison API ---
+
+export interface LeaseOption {
+    id: number;
+    tenant_name: string;
+    trade_name: string | null;
+}
+
+export interface PropertyGroup {
+    property_address: string;
+    leases: LeaseOption[];
+}
+
+export interface LeasesListResponse {
+    properties: PropertyGroup[];
+}
+
+export async function getLeasesGrouped(): Promise<LeasesListResponse> {
+    return apiFetch<LeasesListResponse>("/api/leases/list");
+}
+
+export interface ClauseData {
+    lease_id: number;
+    tenant_name: string;
+    trade_name: string | null;
+    property_address: string;
+    summary: string;
+    key_terms: string;
+    article_reference: string | null;
+}
+
+export interface ClauseComparisonResponse {
+    comparisons: Record<string, ClauseData[]>;
+    lease_count: number;
+}
+
+export async function compareClauses(leaseIds: number[]): Promise<ClauseComparisonResponse> {
+    return apiFetch<ClauseComparisonResponse>("/api/clauses/compare", {
+        method: "POST",
+        body: JSON.stringify({ lease_ids: leaseIds }),
+    });
+}

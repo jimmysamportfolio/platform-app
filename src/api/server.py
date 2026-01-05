@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from retrieval.orchestrator import LeaseRAGOrchestrator
 from analysis.portfolio import PortfolioAnalyzer
-from utils.db import get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH
+from utils.db import get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH, get_leases_grouped_by_property, get_clauses_for_comparison
 
 # File Watcher Imports
 from watchdog.observers import Observer
@@ -231,6 +231,54 @@ async def delete_document(document_name: str):
 async def health_check():
     """Health check endpoint."""
     return {"status": "healthy"}
+
+
+# --- Clause Comparison Endpoints ---
+
+class CompareRequest(BaseModel):
+    lease_ids: list[int]
+
+
+@app.get("/api/leases/list")
+async def list_leases_grouped():
+    """
+    Get all leases grouped by property for the lease picker.
+    
+    Returns:
+        List of properties, each with their leases.
+    """
+    try:
+        properties = get_leases_grouped_by_property()
+        return {"properties": properties}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/clauses/compare")
+async def compare_clauses(request: CompareRequest):
+    """
+    Compare clauses across multiple leases.
+    
+    Args:
+        request: CompareRequest with list of lease IDs.
+        
+    Returns:
+        Dictionary with clause types as keys and comparison data.
+    """
+    if not request.lease_ids:
+        raise HTTPException(status_code=400, detail="No lease IDs provided")
+    
+    if len(request.lease_ids) > 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 leases can be compared at once")
+    
+    try:
+        comparisons = get_clauses_for_comparison(request.lease_ids)
+        return {
+            "comparisons": comparisons,
+            "lease_count": len(request.lease_ids),
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":

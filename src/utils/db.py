@@ -111,6 +111,28 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
             )
         """)
         
+        # Create clauses table for clause comparison feature
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS clauses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                lease_id INTEGER NOT NULL,
+                clause_type TEXT NOT NULL,
+                article_reference TEXT,
+                summary TEXT NOT NULL,
+                key_terms TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (lease_id) REFERENCES leases (id) ON DELETE CASCADE
+            )
+        """)
+        
+        # Create index for faster clause lookups
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_clauses_lease_id ON clauses (lease_id)
+        """)
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_clauses_type ON clauses (clause_type)
+        """)
+        
         print(f"✅ Database initialized: {db_path}")
 
 
@@ -495,6 +517,163 @@ def is_document_processed(document_name: str, db_path: str = DEFAULT_DB_PATH) ->
             LIMIT 1
         """, (document_name,))
         return cursor.fetchone() is not None
+
+
+# --- Clause Functions for Comparison Tool ---
+
+def insert_clauses(lease_id: int, clauses: list[Dict[str, Any]], db_path: str = DEFAULT_DB_PATH) -> int:
+    """
+    Insert extracted clauses for a lease.
+    
+    Args:
+        lease_id: ID of the lease.
+        clauses: List of clause dictionaries with clause_type, summary, key_terms, article_reference.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        Number of clauses inserted.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        
+        # Delete existing clauses for this lease (for re-extraction)
+        cursor.execute("DELETE FROM clauses WHERE lease_id = ?", (lease_id,))
+        
+        # Insert new clauses
+        for clause in clauses:
+            cursor.execute("""
+                INSERT INTO clauses (lease_id, clause_type, article_reference, summary, key_terms)
+                VALUES (?, ?, ?, ?, ?)
+            """, (
+                lease_id,
+                clause.get("clause_type", "other"),
+                clause.get("article_reference"),
+                clause.get("summary", ""),
+                clause.get("key_terms", ""),
+            ))
+        
+        return len(clauses)
+
+
+def get_clauses_by_lease_id(lease_id: int, db_path: str = DEFAULT_DB_PATH) -> list[Dict[str, Any]]:
+    """
+    Get all clauses for a specific lease.
+    
+    Args:
+        lease_id: ID of the lease.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        List of clause dictionaries.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT * FROM clauses 
+            WHERE lease_id = ? 
+            ORDER BY clause_type
+        """, (lease_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_clauses_for_comparison(lease_ids: list[int], db_path: str = DEFAULT_DB_PATH) -> Dict[str, list[Dict[str, Any]]]:
+    """
+    Get clauses for multiple leases, organized by clause type for comparison.
+    
+    Args:
+        lease_ids: List of lease IDs to compare.
+        db_path: Path to the SQLite database file.
+        
+    Returns:
+        Dictionary with clause_type as keys and lists of clause data.
+        Each clause includes lease_id, tenant_name, summary, key_terms, article_reference.
+    """
+    if not lease_ids:
+        return {}
+    
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        
+        # Build parameterized query for multiple IDs
+        placeholders = ",".join("?" * len(lease_ids))
+        
+        cursor.execute(f"""
+            SELECT 
+                c.clause_type,
+                c.article_reference,
+                c.summary,
+                c.key_terms,
+                l.id as lease_id,
+                l.tenant_name,
+                l.trade_name,
+                l.property_address
+            FROM clauses c
+            JOIN leases l ON c.lease_id = l.id
+            WHERE c.lease_id IN ({placeholders})
+            ORDER BY c.clause_type, l.tenant_name
+        """, lease_ids)
+        
+        rows = cursor.fetchall()
+        
+        # Organize by clause type
+        result: Dict[str, list] = {}
+        for row in rows:
+            row_dict = dict(row)
+            clause_type = row_dict["clause_type"]
+            
+            if clause_type not in result:
+                result[clause_type] = []
+            
+            result[clause_type].append({
+                "lease_id": row_dict["lease_id"],
+                "tenant_name": row_dict["tenant_name"],
+                "trade_name": row_dict["trade_name"],
+                "property_address": row_dict["property_address"],
+                "summary": row_dict["summary"],
+                "key_terms": row_dict["key_terms"],
+                "article_reference": row_dict["article_reference"],
+            })
+        
+        return result
+
+
+def get_leases_grouped_by_property(db_path: str = DEFAULT_DB_PATH) -> list[Dict[str, Any]]:
+    """
+    Get all leases grouped by property address for the lease picker.
+    
+    Returns:
+        List of properties, each containing a list of leases.
+    """
+    with get_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id, tenant_name, trade_name, property_address
+            FROM leases
+            ORDER BY property_address, tenant_name
+        """)
+        rows = cursor.fetchall()
+        
+        # Group by property
+        properties: Dict[str, list] = {}
+        for row in rows:
+            row_dict = dict(row)
+            prop = row_dict["property_address"] or "Unknown Property"
+            
+            if prop not in properties:
+                properties[prop] = []
+            
+            properties[prop].append({
+                "id": row_dict["id"],
+                "tenant_name": row_dict["tenant_name"],
+                "trade_name": row_dict["trade_name"],
+            })
+        
+        # Convert to list format
+        return [
+            {"property_address": prop, "leases": leases}
+            for prop, leases in properties.items()
+        ]
 
 
 # --- Test Block ---

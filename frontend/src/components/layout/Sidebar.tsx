@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { MessageCircle, BarChart3, FileText } from "lucide-react";
+import { MessageCircle, BarChart3, FileText, Columns3 } from "lucide-react";
 
 const navItems = [
     { name: "Q&A", href: "/qa", icon: MessageCircle },
     { name: "Portfolio Analytics", href: "/analytics", icon: BarChart3 },
+    { name: "Clause Comparison", href: "/compare", icon: Columns3 },
 ];
 
 export function Sidebar() {

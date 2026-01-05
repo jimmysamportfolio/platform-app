@@ -169,6 +169,87 @@ BE THOROUGH - missing data often exists in Schedules at the end of the document.
             print(f"Error during extraction: {e}")
             raise e
 
+
+# --- Clause Extraction for Comparison Tool ---
+
+class ExtractedClause(BaseModel):
+    """Represents a single extracted clause with summary and key terms."""
+    clause_type: str = Field(..., description="Type of clause from: definitions, rent_payment, security_deposit, maintenance_repairs, insurance, default_remedies, termination, assignment_subletting, use_restrictions, environmental, indemnification, general_provisions, schedules_exhibits, parties_recitals, other")
+    article_reference: Optional[str] = Field(None, description="Article/section reference (e.g., '3.01', 'Article 5')")
+    summary: str = Field(..., description="2-3 sentence summary of the clause's key provisions")
+    key_terms: str = Field(..., description="Comma-separated list of notable terms, amounts, dates, or deviations from standard (e.g., '$20,000 deposit, 10-year term, 2 renewal options')")
+
+
+class ExtractedClauses(BaseModel):
+    """Collection of extracted clauses from a lease."""
+    clauses: List[ExtractedClause] = Field(default_factory=list, description="List of extracted clause summaries")
+
+
+class ClauseExtractor:
+    """
+    Extracts clause summaries and key terms from lease documents.
+    
+    Produces scannable comparison data instead of full clause text.
+    """
+    
+    def __init__(self, model_name: str = "gemini-2.5-flash"):
+        self.api_key = os.getenv("GOOGLE_API_KEY")
+        if not self.api_key:
+            raise ValueError("GOOGLE_API_KEY not found in environment variables.")
+        
+        # Initialize Gemini
+        self.llm = ChatGoogleGenerativeAI(
+            model=model_name,
+            temperature=0,
+            max_retries=2,
+            google_api_key=self.api_key
+        )
+        
+        # Bind the schema to the model
+        self.structured_llm = self.llm.with_structured_output(ExtractedClauses)
+    
+    def extract_clauses(self, text_content: str) -> List[dict]:
+        """
+        Extract clause summaries and key terms from lease text.
+        
+        Args:
+            text_content: The raw text of the lease document.
+            
+        Returns:
+            List of clause dictionaries with clause_type, summary, key_terms, article_reference.
+        """
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", """You are an expert commercial real estate lease abstractor. Extract SUMMARIES and KEY TERMS for each major clause type in the lease.
+
+For EACH clause type found in the document, provide:
+1. clause_type: One of: definitions, rent_payment, security_deposit, maintenance_repairs, insurance, default_remedies, termination, assignment_subletting, use_restrictions, environmental, indemnification, general_provisions, schedules_exhibits, parties_recitals, other
+2. article_reference: The article/section number (e.g., "3.01", "Article 5", "Schedule B")
+3. summary: A 2-3 sentence summary of what this clause covers and any notable provisions
+4. key_terms: Comma-separated notable terms, amounts, dates, percentages, or DEVIATIONS from standard lease language
+
+IMPORTANT:
+- Focus on WHAT MATTERS for comparison - highlight specific numbers, dates, and unusual terms
+- For rent_payment: include base rent, escalations, percentage rent if any
+- For security_deposit: include amount and any conditions for return
+- For termination: include early termination rights, notice periods
+- For use_restrictions: include permitted use, exclusive use rights, prohibited uses
+- For renewal options: include number of options, term length, rent adjustment method
+
+Extract clauses from ALL sections including Schedules (A, B, C, D).
+Only include clause types that are actually present in the document."""),
+            ("human", "Lease Text:\n{text}")
+        ])
+        
+        chain = prompt | self.structured_llm
+        
+        try:
+            result = chain.invoke({"text": text_content[:100000]})  # Limit to avoid token overflow
+            return [clause.model_dump() for clause in result.clauses]
+        except Exception as e:
+            print(f"Error during clause extraction: {e}")
+            return []
+
+
 # --- Test Block ---
 if __name__ == "__main__":
     # A dummy lease snippet to test the logic
