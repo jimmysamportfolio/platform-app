@@ -29,6 +29,7 @@ matplotlib>=3.7.1              # For visualizing token distribution
 
 # --- File Monitoring ---
 watchdog>=3.0.0                # File system event monitoring for auto-ingestion
+nest_asyncio>=1.5.0            # Allows nested event loops (needed for LangChain in async contexts)
 
 # --- API Server ---
 fastapi>=0.115.0               # REST API for frontend

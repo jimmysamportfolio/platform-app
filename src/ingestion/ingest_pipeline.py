@@ -14,6 +14,8 @@ import os
 import sys
 import json
 import time
+import nest_asyncio
+nest_asyncio.apply()  # Allow nested event loops (needed when running in file watcher context)
 import asyncio
 from typing import List, Optional, Dict, Any
 from pathlib import Path
