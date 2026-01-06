@@ -64,6 +64,7 @@ export default function AnalyticsPage() {
     // Delete state
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deletingDoc, setDeletingDoc] = useState<{ name: string; display: string } | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     async function fetchData() {
         setIsLoading(true);
@@ -153,14 +154,20 @@ export default function AnalyticsPage() {
     };
 
     const confirmDelete = async () => {
-        if (!deletingDoc) return;
+        if (!deletingDoc || isDeleting) return;
+
+        // Close modal immediately to prevent multiple clicks
+        setIsDeleting(true);
+        setDeleteOpen(false);
+
         try {
             await deleteDocument(deletingDoc.name);
-            setDeleteOpen(false);
             setDeletingDoc(null);
             fetchData(); // Refresh list
         } catch (err) {
             alert("Failed to delete: " + (err instanceof Error ? err.message : "Unknown error"));
+        } finally {
+            setIsDeleting(false);
         }
     };
 

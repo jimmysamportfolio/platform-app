@@ -52,6 +52,24 @@ const formatClauseType = (type: string): string => {
     return type.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 };
 
+// Helper to render markdown bold (**text**) as styled spans
+const renderBoldText = (text: string): React.ReactNode => {
+    // Split by **bold** markdown pattern
+    const parts = text.split(/\*\*([^*]+)\*\*/g);
+
+    return parts.map((part, i) => {
+        // Odd indices are the bold content (captured group)
+        if (i % 2 === 1) {
+            return (
+                <span key={i} className="font-semibold text-foreground">
+                    {part}
+                </span>
+            );
+        }
+        return part;
+    });
+};
+
 export default function ClauseComparisonPage() {
     // Data state
     const [properties, setProperties] = useState<PropertyGroup[]>([]);
@@ -348,8 +366,8 @@ export default function ClauseComparisonPage() {
                                                                             {clauseData.article_reference}
                                                                         </div>
                                                                     )}
-                                                                    <div className="text-sm leading-relaxed">
-                                                                        {clauseData.summary}
+                                                                    <div className="text-sm leading-relaxed text-muted-foreground">
+                                                                        {renderBoldText(clauseData.summary)}
                                                                     </div>
                                                                     {clauseData.key_terms && (
                                                                         <div className="flex flex-wrap gap-1 pt-1">
