@@ -246,20 +246,21 @@ CLAUSE TYPES (use these exact values):
 - default_remedies: Cure periods, remedies available
 
 OUTPUT FORMAT - BE CONSISTENT:
-- summary: 1-2 short phrases with KEY NUMBERS. Max 40 words. Start with the most important fact.
+- summary: 1-2 short phrases. Max 40 words. Use **bold** for key numbers and values (e.g., **$22.50/sqft**, **10 years**, **3%**).
 - key_terms: Exactly 3-5 values, comma-separated. Include dollar amounts and time periods.
 - article_reference: Use format "Article X" or "Section X.XX" or "Schedule X"
 
 EXAMPLES:
 | clause_type | summary | key_terms |
 |-------------|---------|-----------|
-| rent_payment | Base rent $22.50/sqft Year 1, increasing 3% annually. Triple net lease. | $22.50/sqft, 3% annual, NNN |
-| security_deposit | $45,000 deposit (2 months rent). Returned within 30 days. | $45,000, 2 months, 30 days |
-| term_renewal | 10-year initial term. Two 5-year renewal options at market rent. | 10 years, 2 options, 5 years each |
-| use_restrictions | Restaurant use only. Exclusive for sushi within center. No alcohol. | Restaurant, exclusive sushi, no alcohol |
-| termination | No early termination. Must provide 6-month notice for non-renewal. | No early out, 6-month notice |
+| rent_payment | Base rent **$22.50/sqft** Year 1, increasing **3%** annually. **Triple net** lease. | $22.50/sqft, 3% annual, NNN |
+| security_deposit | **$45,000** deposit (2 months rent). Returned within **30 days**. | $45,000, 2 months, 30 days |
+| term_renewal | **10-year** initial term. **Two 5-year** renewal options at market rent. | 10 years, 2 options, 5 years each |
+| use_restrictions | **Restaurant** use only. **Exclusive for sushi** within center. No alcohol. | Restaurant, exclusive sushi, no alcohol |
+| termination | **No early termination**. Must provide **6-month** notice for non-renewal. | No early out, 6-month notice |
 
 IMPORTANT: 
+- Use **bold** markdown for all key numbers, amounts, and important terms
 - Only extract clauses that are EXPLICITLY stated in the lease
 - Use consistent formatting across all clauses
 - If a clause isn't clearly defined, skip it"""),
