@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,39 +11,45 @@ import {
     PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow,
-} from "@/components/ui/table";
-import {
     getLeasesGrouped,
     compareClauses,
     PropertyGroup,
     LeaseOption,
     ClauseData,
 } from "@/lib/api";
-import { Search, ChevronDown, X, Building2, FileText } from "lucide-react";
+import { Search, ChevronDown, X, Building2, FileText, Loader2 } from "lucide-react";
 
-// Human-readable clause type labels
+// Human-readable clause type labels (matches STANDARD_CLAUSE_TYPES in extractor.py)
 const CLAUSE_LABELS: Record<string, string> = {
-    definitions: "Definitions",
     rent_payment: "Rent & Payment",
     security_deposit: "Security Deposit",
+    term_renewal: "Term & Renewal",
+    use_restrictions: "Use Restrictions",
     maintenance_repairs: "Maintenance & Repairs",
     insurance: "Insurance",
-    default_remedies: "Default & Remedies",
     termination: "Termination",
     assignment_subletting: "Assignment & Subletting",
-    use_restrictions: "Use Restrictions",
-    environmental: "Environmental",
-    indemnification: "Indemnification",
-    general_provisions: "General Provisions",
-    schedules_exhibits: "Schedules & Exhibits",
-    parties_recitals: "Parties & Recitals",
-    other: "Other",
+    default_remedies: "Default & Remedies",
+};
+
+// Order for displaying clause types
+const CLAUSE_ORDER = [
+    "rent_payment",
+    "security_deposit",
+    "term_renewal",
+    "use_restrictions",
+    "maintenance_repairs",
+    "insurance",
+    "termination",
+    "assignment_subletting",
+    "default_remedies",
+];
+
+// Helper to format clause type for display
+const formatClauseType = (type: string): string => {
+    if (CLAUSE_LABELS[type]) return CLAUSE_LABELS[type];
+    // Fallback: convert snake_case to Title Case
+    return type.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
 };
 
 export default function ClauseComparisonPage() {
@@ -74,6 +80,24 @@ export default function ClauseComparisonPage() {
         loadLeases();
     }, []);
 
+    // Auto-compare when selection changes (2+ leases)
+    const doCompare = useCallback(async (leases: LeaseOption[]) => {
+        if (leases.length < 2) {
+            setComparisons({});
+            return;
+        }
+
+        setIsComparing(true);
+        try {
+            const result = await compareClauses(leases.map((l) => l.id));
+            setComparisons(result.comparisons);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : "Comparison failed");
+        } finally {
+            setIsComparing(false);
+        }
+    }, []);
+
     // Filter properties/leases by search
     const filteredProperties = useMemo(() => {
         if (!searchQuery.trim()) return properties;
@@ -96,41 +120,35 @@ export default function ClauseComparisonPage() {
     const isSelected = (leaseId: number) =>
         selectedLeases.some((l) => l.id === leaseId);
 
-    // Toggle lease selection
+    // Toggle lease selection - auto-compare on change
     const toggleLease = (lease: LeaseOption) => {
+        let newSelection: LeaseOption[];
         if (isSelected(lease.id)) {
-            setSelectedLeases((prev) => prev.filter((l) => l.id !== lease.id));
+            newSelection = selectedLeases.filter((l) => l.id !== lease.id);
         } else {
-            setSelectedLeases((prev) => [...prev, lease]);
+            newSelection = [...selectedLeases, lease];
         }
+        setSelectedLeases(newSelection);
+        doCompare(newSelection);
     };
 
     // Remove a selected lease
     const removeLease = (leaseId: number) => {
-        setSelectedLeases((prev) => prev.filter((l) => l.id !== leaseId));
+        const newSelection = selectedLeases.filter((l) => l.id !== leaseId);
+        setSelectedLeases(newSelection);
+        doCompare(newSelection);
     };
 
-    // Compare selected leases
-    const handleCompare = async () => {
-        if (selectedLeases.length < 2) return;
-
-        setIsComparing(true);
-        try {
-            const result = await compareClauses(selectedLeases.map((l) => l.id));
-            setComparisons(result.comparisons);
-        } catch (err) {
-            setError(err instanceof Error ? err.message : "Comparison failed");
-        } finally {
-            setIsComparing(false);
-        }
-    };
-
-    // Get clause types that have data
+    // Get clause types that have data, sorted by CLAUSE_ORDER
     const clauseTypes = useMemo(() => {
         return Object.keys(comparisons).sort((a, b) => {
-            // Sort by predefined order
-            const order = Object.keys(CLAUSE_LABELS);
-            return order.indexOf(a) - order.indexOf(b);
+            const aIndex = CLAUSE_ORDER.indexOf(a);
+            const bIndex = CLAUSE_ORDER.indexOf(b);
+            // Put unknown types at the end
+            if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+            if (aIndex === -1) return 1;
+            if (bIndex === -1) return -1;
+            return aIndex - bIndex;
         });
     }, [comparisons]);
 
@@ -262,17 +280,16 @@ export default function ClauseComparisonPage() {
                                 </div>
                             ))}
 
-                            {/* Compare Button */}
-                            <Button
-                                onClick={handleCompare}
-                                disabled={selectedLeases.length < 2 || isComparing}
-                                className="ml-auto"
-                            >
-                                {isComparing ? "Comparing..." : "Compare Clauses"}
-                            </Button>
+                            {/* Loading indicator */}
+                            {isComparing && (
+                                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                    Loading...
+                                </div>
+                            )}
                         </div>
 
-                        {selectedLeases.length < 2 && selectedLeases.length > 0 && (
+                        {selectedLeases.length === 1 && (
                             <p className="text-xs text-muted-foreground mt-2">
                                 Select at least 2 leases to compare
                             </p>
@@ -289,57 +306,60 @@ export default function ClauseComparisonPage() {
                                 Clause Comparison
                             </CardTitle>
                         </CardHeader>
-                        <CardContent>
-                            <div className="rounded-md border overflow-hidden">
-                                <Table>
-                                    <TableHeader>
-                                        <TableRow className="bg-muted/50">
-                                            <TableHead className="w-48 font-semibold">
-                                                Clause Type
-                                            </TableHead>
+                        <CardContent className="p-0">
+                            {/* Horizontal scroll wrapper */}
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse min-w-max">
+                                    <thead>
+                                        <tr className="bg-muted/50 border-b">
+                                            <th className="w-36 min-w-36 max-w-36 px-4 py-3 text-left text-sm font-semibold sticky left-0 bg-muted/50 z-10">
+                                                Clause
+                                            </th>
                                             {selectedLeases.map((lease) => (
-                                                <TableHead key={lease.id} className="min-w-[250px]">
-                                                    <div className="font-semibold">
-                                                        {lease.trade_name || lease.tenant_name}
-                                                    </div>
-                                                </TableHead>
+                                                <th
+                                                    key={lease.id}
+                                                    className="w-64 min-w-64 max-w-64 px-4 py-3 text-left text-sm font-semibold border-l"
+                                                >
+                                                    {lease.trade_name || lease.tenant_name}
+                                                </th>
                                             ))}
-                                        </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
                                         {clauseTypes.map((clauseType) => (
-                                            <TableRow key={clauseType}>
-                                                <TableCell className="font-medium align-top bg-muted/30">
-                                                    {CLAUSE_LABELS[clauseType] || clauseType}
-                                                </TableCell>
+                                            <tr key={clauseType} className="border-b hover:bg-muted/20">
+                                                <td className="w-36 min-w-36 max-w-36 px-4 py-4 text-sm font-medium bg-muted/30 sticky left-0 z-10 align-top">
+                                                    {formatClauseType(clauseType)}
+                                                </td>
                                                 {selectedLeases.map((lease) => {
                                                     const clauseData = comparisons[clauseType]?.find(
                                                         (c) => c.lease_id === lease.id
                                                     );
 
                                                     return (
-                                                        <TableCell
+                                                        <td
                                                             key={lease.id}
-                                                            className="align-top"
+                                                            className="w-64 min-w-64 max-w-64 px-4 py-4 align-top border-l"
                                                         >
                                                             {clauseData ? (
                                                                 <div className="space-y-2">
                                                                     {clauseData.article_reference && (
-                                                                        <div className="text-xs text-muted-foreground">
+                                                                        <div className="text-xs text-muted-foreground font-medium">
                                                                             {clauseData.article_reference}
                                                                         </div>
                                                                     )}
-                                                                    <p className="text-sm">
+                                                                    <div className="text-sm leading-relaxed">
                                                                         {clauseData.summary}
-                                                                    </p>
+                                                                    </div>
                                                                     {clauseData.key_terms && (
-                                                                        <div className="flex flex-wrap gap-1 mt-2">
+                                                                        <div className="flex flex-wrap gap-1 pt-1">
                                                                             {clauseData.key_terms
                                                                                 .split(",")
+                                                                                .slice(0, 5)
                                                                                 .map((term, i) => (
                                                                                     <span
                                                                                         key={i}
-                                                                                        className="inline-block px-2 py-0.5 bg-primary/10 text-primary text-xs rounded"
+                                                                                        className="inline-block px-2 py-0.5 bg-primary/10 text-primary text-xs rounded font-medium"
                                                                                     >
                                                                                         {term.trim()}
                                                                                     </span>
@@ -349,22 +369,22 @@ export default function ClauseComparisonPage() {
                                                                 </div>
                                                             ) : (
                                                                 <span className="text-muted-foreground text-sm italic">
-                                                                    Not found
+                                                                    —
                                                                 </span>
                                                             )}
-                                                        </TableCell>
+                                                        </td>
                                                     );
                                                 })}
-                                            </TableRow>
+                                            </tr>
                                         ))}
-                                    </TableBody>
-                                </Table>
+                                    </tbody>
+                                </table>
                             </div>
                         </CardContent>
                     </Card>
                 )}
 
-                {/* Empty State */}
+                {/* Empty State - No clause data after comparison */}
                 {clauseTypes.length === 0 && selectedLeases.length >= 2 && !isComparing && (
                     <Card>
                         <CardContent className="py-12 text-center">
