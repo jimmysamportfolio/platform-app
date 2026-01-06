@@ -172,12 +172,25 @@ BE THOROUGH - missing data often exists in Schedules at the end of the document.
 
 # --- Clause Extraction for Comparison Tool ---
 
+# Standard clause types for extraction
+STANDARD_CLAUSE_TYPES = [
+    "rent_payment",
+    "security_deposit", 
+    "term_renewal",
+    "use_restrictions",
+    "maintenance_repairs",
+    "insurance",
+    "termination",
+    "assignment_subletting",
+    "default_remedies",
+]
+
 class ExtractedClause(BaseModel):
     """Represents a single extracted clause with summary and key terms."""
-    clause_type: str = Field(..., description="Type of clause from: definitions, rent_payment, security_deposit, maintenance_repairs, insurance, default_remedies, termination, assignment_subletting, use_restrictions, environmental, indemnification, general_provisions, schedules_exhibits, parties_recitals, other")
-    article_reference: Optional[str] = Field(None, description="Article/section reference (e.g., '3.01', 'Article 5')")
-    summary: str = Field(..., description="2-3 sentence summary of the clause's key provisions")
-    key_terms: str = Field(..., description="Comma-separated list of notable terms, amounts, dates, or deviations from standard (e.g., '$20,000 deposit, 10-year term, 2 renewal options')")
+    clause_type: str = Field(..., description="One of: rent_payment, security_deposit, term_renewal, use_restrictions, maintenance_repairs, insurance, termination, assignment_subletting, default_remedies")
+    article_reference: Optional[str] = Field(None, description="Article/section number (e.g., 'Article 3', 'Section 5.01')")
+    summary: str = Field(..., description="Concise summary with key facts and numbers. Max 40 words.")
+    key_terms: str = Field(..., description="3-5 key values, comma-separated (e.g., '$25/sqft, 5 years, 2 options')")
 
 
 class ExtractedClauses(BaseModel):
@@ -219,24 +232,37 @@ class ClauseExtractor:
             List of clause dictionaries with clause_type, summary, key_terms, article_reference.
         """
         prompt = ChatPromptTemplate.from_messages([
-            ("system", """You are an expert commercial real estate lease abstractor. Extract SUMMARIES and KEY TERMS for each major clause type in the lease.
+            ("system", """You are extracting lease clause summaries for side-by-side comparison. Extract EXACTLY these 9 clause types if present:
 
-For EACH clause type found in the document, provide:
-1. clause_type: One of: definitions, rent_payment, security_deposit, maintenance_repairs, insurance, default_remedies, termination, assignment_subletting, use_restrictions, environmental, indemnification, general_provisions, schedules_exhibits, parties_recitals, other
-2. article_reference: The article/section number (e.g., "3.01", "Article 5", "Schedule B")
-3. summary: A 2-3 sentence summary of what this clause covers and any notable provisions
-4. key_terms: Comma-separated notable terms, amounts, dates, percentages, or DEVIATIONS from standard lease language
+CLAUSE TYPES (use these exact values):
+- rent_payment: Base rent, escalations, additional rent, CAM, NNN
+- security_deposit: Amount, conditions for return
+- term_renewal: Lease term length, renewal options, notice periods  
+- use_restrictions: Permitted use, exclusive use, prohibited activities
+- maintenance_repairs: Tenant vs landlord responsibilities
+- insurance: Required coverage types and amounts
+- termination: Early termination rights, conditions
+- assignment_subletting: Consent requirements, conditions
+- default_remedies: Cure periods, remedies available
 
-IMPORTANT:
-- Focus on WHAT MATTERS for comparison - highlight specific numbers, dates, and unusual terms
-- For rent_payment: include base rent, escalations, percentage rent if any
-- For security_deposit: include amount and any conditions for return
-- For termination: include early termination rights, notice periods
-- For use_restrictions: include permitted use, exclusive use rights, prohibited uses
-- For renewal options: include number of options, term length, rent adjustment method
+OUTPUT FORMAT - BE CONSISTENT:
+- summary: 1-2 short phrases with KEY NUMBERS. Max 40 words. Start with the most important fact.
+- key_terms: Exactly 3-5 values, comma-separated. Include dollar amounts and time periods.
+- article_reference: Use format "Article X" or "Section X.XX" or "Schedule X"
 
-Extract clauses from ALL sections including Schedules (A, B, C, D).
-Only include clause types that are actually present in the document."""),
+EXAMPLES:
+| clause_type | summary | key_terms |
+|-------------|---------|-----------|
+| rent_payment | Base rent $22.50/sqft Year 1, increasing 3% annually. Triple net lease. | $22.50/sqft, 3% annual, NNN |
+| security_deposit | $45,000 deposit (2 months rent). Returned within 30 days. | $45,000, 2 months, 30 days |
+| term_renewal | 10-year initial term. Two 5-year renewal options at market rent. | 10 years, 2 options, 5 years each |
+| use_restrictions | Restaurant use only. Exclusive for sushi within center. No alcohol. | Restaurant, exclusive sushi, no alcohol |
+| termination | No early termination. Must provide 6-month notice for non-renewal. | No early out, 6-month notice |
+
+IMPORTANT: 
+- Only extract clauses that are EXPLICITLY stated in the lease
+- Use consistent formatting across all clauses
+- If a clause isn't clearly defined, skip it"""),
             ("human", "Lease Text:\n{text}")
         ])
         
