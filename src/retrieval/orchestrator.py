@@ -80,6 +80,7 @@ class RAGResponse:
     route: str  # 'analytics' or 'retrieval'
     sources: List[Dict[str, Any]]
     metadata: Dict[str, Any]
+    confidence: int = 75  # 0-100 confidence percentage
 
 
 class LeaseRAGOrchestrator:
@@ -259,6 +260,7 @@ class LeaseRAGOrchestrator:
                 "candidates": len(candidates),
                 "reranked": len(top_docs),
             },
+            confidence=result.get("confidence", 75),
         )
     
     def query(

@@ -410,6 +410,90 @@ class IngestionPipeline:
         print(f"{'='*60}")
         
         return results
+    
+    def run_clause_only(
+        self,
+        file_path: str,
+        output_markdown_path: Optional[str] = None,
+    ) -> PipelineResult:
+        """
+        Run a quick clause-only extraction (no Pinecone indexing).
+        
+        This mode is faster and meant for the clause comparison tool.
+        Steps: Parse → Extract Metadata → Extract Clauses → Save to SQLite
+        
+        Args:
+            file_path: Path to the input document (PDF or DOCX).
+            output_markdown_path: Optional path to save parsed markdown.
+            
+        Returns:
+            PipelineResult with processing details.
+        """
+        start_time = time.time()
+        document_name = os.path.basename(file_path)
+        
+        print(f"\n{'='*60}")
+        print(f"🚀 Clause-Only Extraction: {document_name}")
+        print(f"{'='*60}")
+        
+        try:
+            # Step 1: Parse document
+            print("\n📄 Step 1/3: Parsing document...")
+            if not output_markdown_path:
+                output_markdown_path = f"data/parsed/{Path(file_path).stem}.md"
+            
+            documents = self.parser.parse_file(file_path, output_markdown_path)
+            full_text = "\n\n".join(doc.text for doc in documents if hasattr(doc, 'text'))
+            print(f"   Parsed {len(full_text):,} characters")
+            
+            # Step 2: Extract lease metadata
+            print("\n🔍 Step 2/3: Extracting lease metadata...")
+            lease = self.extractor.extract(full_text[:150000])
+            print(f"   Tenant: {lease.tenant_name}")
+            print(f"   Landlord: {lease.landlord_name}")
+            
+            # Save lease to SQLite
+            print("\n💾 Saving lease to database...")
+            lease_id = insert_lease(lease.model_dump(mode="json"), document_name)
+            print(f"   Lease ID: {lease_id}")
+            
+            # Step 3: Extract clauses
+            print("\n📋 Step 3/3: Extracting clause summaries...")
+            clause_extractor = ClauseExtractor()
+            clauses = clause_extractor.extract_clauses(full_text)
+            if clauses:
+                num_clauses = insert_clauses(lease_id, clauses)
+                print(f"   Extracted {num_clauses} clause summaries")
+            else:
+                print("   No clauses extracted")
+            
+            processing_time = time.time() - start_time
+            
+            print(f"\n{'='*60}")
+            print(f"✅ Clause extraction complete: {document_name}")
+            print(f"   Time: {processing_time:.1f}s")
+            print(f"{'='*60}")
+            
+            return PipelineResult(
+                document_name=document_name,
+                success=True,
+                chunks_processed=0,  # No chunking in clause-only mode
+                vectors_uploaded=0,  # No Pinecone in clause-only mode
+                lease_data=lease.model_dump(mode="json"),
+                processing_time_seconds=processing_time,
+            )
+            
+        except Exception as e:
+            processing_time = time.time() - start_time
+            print(f"\n❌ Error: {e}")
+            return PipelineResult(
+                document_name=document_name,
+                success=False,
+                chunks_processed=0,
+                vectors_uploaded=0,
+                error_message=str(e),
+                processing_time_seconds=processing_time,
+            )
 
 
 # --- Test Block ---

@@ -13,11 +13,13 @@ import {
 import {
     getLeasesGrouped,
     compareClauses,
+    getKeyTerms,
     PropertyGroup,
     LeaseOption,
     ClauseData,
+    KeyTermsLease,
 } from "@/lib/api";
-import { Search, ChevronDown, X, Building2, FileText, Loader2 } from "lucide-react";
+import { Search, ChevronDown, X, Building2, FileText, Loader2, ClipboardList } from "lucide-react";
 
 // Human-readable clause type labels (matches STANDARD_CLAUSE_TYPES in extractor.py)
 const CLAUSE_LABELS: Record<string, string> = {
@@ -74,6 +76,7 @@ export default function ClauseComparisonPage() {
     // Data state
     const [properties, setProperties] = useState<PropertyGroup[]>([]);
     const [comparisons, setComparisons] = useState<Record<string, ClauseData[]>>({});
+    const [keyTerms, setKeyTerms] = useState<KeyTermsLease[]>([]);
     const [selectedLeases, setSelectedLeases] = useState<LeaseOption[]>([]);
 
     // UI state
@@ -82,6 +85,7 @@ export default function ClauseComparisonPage() {
     const [error, setError] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [activeTab, setActiveTab] = useState<"clauses" | "keyterms">("clauses");
 
     // Load leases on mount
     useEffect(() => {
@@ -102,13 +106,20 @@ export default function ClauseComparisonPage() {
     const doCompare = useCallback(async (leases: LeaseOption[]) => {
         if (leases.length < 2) {
             setComparisons({});
+            setKeyTerms([]);
             return;
         }
 
         setIsComparing(true);
         try {
-            const result = await compareClauses(leases.map((l) => l.id));
-            setComparisons(result.comparisons);
+            const leaseIds = leases.map((l) => l.id);
+            // Fetch both clauses and key terms in parallel
+            const [clauseResult, keyTermsResult] = await Promise.all([
+                compareClauses(leaseIds),
+                getKeyTerms(leaseIds),
+            ]);
+            setComparisons(clauseResult.comparisons);
+            setKeyTerms(keyTermsResult.leases);
         } catch (err) {
             setError(err instanceof Error ? err.message : "Comparison failed");
         } finally {
@@ -315,8 +326,32 @@ export default function ClauseComparisonPage() {
                     </CardContent>
                 </Card>
 
-                {/* Comparison Table */}
-                {clauseTypes.length > 0 && (
+                {/* Tab Buttons */}
+                {selectedLeases.length >= 2 && (
+                    <div className="flex gap-2 mb-4">
+                        <Button
+                            variant={activeTab === "clauses" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setActiveTab("clauses")}
+                            className="gap-2"
+                        >
+                            <FileText className="w-4 h-4" />
+                            Clause Comparison
+                        </Button>
+                        <Button
+                            variant={activeTab === "keyterms" ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setActiveTab("keyterms")}
+                            className="gap-2"
+                        >
+                            <ClipboardList className="w-4 h-4" />
+                            Key Terms
+                        </Button>
+                    </div>
+                )}
+
+                {/* Clause Comparison Table */}
+                {activeTab === "clauses" && clauseTypes.length > 0 && (
                     <Card>
                         <CardHeader className="pb-4">
                             <CardTitle className="text-base flex items-center gap-2">
@@ -390,6 +425,88 @@ export default function ClauseComparisonPage() {
                                                                     —
                                                                 </span>
                                                             )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </CardContent>
+                    </Card>
+                )}
+
+                {/* Key Terms Table */}
+                {activeTab === "keyterms" && keyTerms.length > 0 && (
+                    <Card>
+                        <CardHeader className="pb-4">
+                            <CardTitle className="text-base flex items-center gap-2">
+                                <ClipboardList className="w-4 h-4" />
+                                Key Terms (Due Diligence)
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="p-0">
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse min-w-max">
+                                    <thead>
+                                        <tr className="bg-muted/50 border-b">
+                                            <th className="w-40 min-w-40 px-4 py-3 text-left text-sm font-semibold sticky left-0 bg-muted/50 z-10">
+                                                Field
+                                            </th>
+                                            {selectedLeases.map((lease) => (
+                                                <th
+                                                    key={lease.id}
+                                                    className="w-56 min-w-56 px-4 py-3 text-left text-sm font-semibold border-l"
+                                                >
+                                                    {lease.trade_name || lease.tenant_name}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {/* Key Terms Rows */}
+                                        {[
+                                            { key: "tenant_name", label: "Tenant Name" },
+                                            { key: "tenant_address", label: "Tenant Address" },
+                                            { key: "indemnifier_name", label: "Indemnifier Name" },
+                                            { key: "indemnifier_address", label: "Indemnifier Address" },
+                                            { key: "lease_date", label: "Lease Date" },
+                                            { key: "premises", label: "Premises" },
+                                            { key: "rentable_area_sqft", label: "Size (sq ft)", format: (v: number | null) => v ? v.toLocaleString() : "—" },
+                                            { key: "term_years", label: "Term (years)" },
+                                            { key: "renewal_option", label: "Renewal Options" },
+                                            { key: "deposit_amount", label: "Deposit", format: (v: number | null) => v ? `$${v.toLocaleString()}` : "—" },
+                                            { key: "permitted_use", label: "Use Clause" },
+                                            { key: "fixturing_period", label: "Fixturing Period" },
+                                            { key: "free_rent_period", label: "Free Rent Period" },
+                                            { key: "possession_date", label: "Possession Date" },
+                                            { key: "tenant_improvement_allowance", label: "TI Allowance" },
+                                            { key: "exclusive_use", label: "Exclusive Use" },
+                                        ].map((field) => (
+                                            <tr key={field.key} className="border-b hover:bg-muted/20">
+                                                <td className="px-4 py-3 text-sm font-medium bg-muted/30 sticky left-0 z-10">
+                                                    {field.label}
+                                                </td>
+                                                {selectedLeases.map((lease) => {
+                                                    const leaseData = keyTerms.find((k) => k.id === lease.id);
+                                                    let displayValue = "—";
+
+                                                    if (leaseData) {
+                                                        const value = leaseData[field.key as keyof KeyTermsLease];
+                                                        if (value !== null && value !== undefined) {
+                                                            displayValue = field.format
+                                                                ? field.format(value as number | null)
+                                                                : String(value);
+                                                        }
+                                                    }
+
+                                                    return (
+                                                        <td
+                                                            key={lease.id}
+                                                            className="px-4 py-3 text-sm text-muted-foreground border-l"
+                                                        >
+                                                            {displayValue}
                                                         </td>
                                                     );
                                                 })}

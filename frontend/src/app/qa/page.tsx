@@ -10,6 +10,7 @@ interface Message {
     id: string;
     role: "user" | "assistant";
     content: string;
+    confidence?: number;  // Only for assistant messages
 }
 
 const STORAGE_KEY = "lease-chat-history";
@@ -67,6 +68,7 @@ export default function QAPage() {
                 id: (Date.now() + 1).toString(),
                 role: "assistant",
                 content: response.answer,
+                confidence: response.confidence,
             };
             setMessages((prev) => [...prev, assistantMessage]);
         } catch (error) {
@@ -164,6 +166,35 @@ export default function QAPage() {
                                     >
                                         {lastAssistantMessage.content}
                                     </ReactMarkdown>
+                                    {/* Confidence indicator */}
+                                    {lastAssistantMessage.confidence !== undefined && (
+                                        <div className="mt-4 pt-4 border-t border-muted">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-muted-foreground">Confidence:</span>
+                                                <div className="flex items-center gap-1.5">
+                                                    <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden">
+                                                        <div
+                                                            className={`h-full rounded-full transition-all ${lastAssistantMessage.confidence >= 80
+                                                                    ? 'bg-green-500'
+                                                                    : lastAssistantMessage.confidence >= 60
+                                                                        ? 'bg-yellow-500'
+                                                                        : 'bg-orange-500'
+                                                                }`}
+                                                            style={{ width: `${lastAssistantMessage.confidence}%` }}
+                                                        />
+                                                    </div>
+                                                    <span className={`text-xs font-medium ${lastAssistantMessage.confidence >= 80
+                                                            ? 'text-green-600'
+                                                            : lastAssistantMessage.confidence >= 60
+                                                                ? 'text-yellow-600'
+                                                                : 'text-orange-600'
+                                                        }`}>
+                                                        {lastAssistantMessage.confidence}%
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             ) : null}
                         </div>

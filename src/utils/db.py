@@ -78,10 +78,35 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 permitted_use TEXT,
                 exclusive_use TEXT,
                 radius_restriction TEXT,
+                indemnifier_name TEXT,
+                tenant_address TEXT,
+                indemnifier_address TEXT,
+                fixturing_period TEXT,
+                free_rent_period TEXT,
+                tenant_improvement_allowance TEXT,
+                offer_to_lease_date DATE,
+                indemnity_agreement_date DATE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Migration: Add new columns if they don't exist (for existing databases)
+        new_columns = [
+            ("indemnifier_name", "TEXT"),
+            ("tenant_address", "TEXT"),
+            ("indemnifier_address", "TEXT"),
+            ("fixturing_period", "TEXT"),
+            ("free_rent_period", "TEXT"),
+            ("tenant_improvement_allowance", "TEXT"),
+            ("offer_to_lease_date", "DATE"),
+            ("indemnity_agreement_date", "DATE"),
+        ]
+        for col_name, col_type in new_columns:
+            try:
+                cursor.execute(f"ALTER TABLE leases ADD COLUMN {col_name} {col_type}")
+            except sqlite3.OperationalError:
+                pass  # Column already exists
         
         # Create rent schedule table for normalized storage
         cursor.execute("""
@@ -107,9 +132,16 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
                 vectors_uploaded INTEGER DEFAULT 0,
                 processing_time_seconds REAL DEFAULT 0.0,
                 error_message TEXT,
+                extraction_mode TEXT DEFAULT 'full',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Migration: Add extraction_mode column to ingestion_logs if it doesn't exist
+        try:
+            cursor.execute("ALTER TABLE ingestion_logs ADD COLUMN extraction_mode TEXT DEFAULT 'full'")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
         
         # Create clauses table for clause comparison feature
         cursor.execute("""
@@ -182,6 +214,14 @@ def insert_lease(data: Dict[str, Any], document_name: str, db_path: str = DEFAUL
                     permitted_use = ?,
                     exclusive_use = ?,
                     radius_restriction = ?,
+                    indemnifier_name = ?,
+                    tenant_address = ?,
+                    indemnifier_address = ?,
+                    fixturing_period = ?,
+                    free_rent_period = ?,
+                    tenant_improvement_allowance = ?,
+                    offer_to_lease_date = ?,
+                    indemnity_agreement_date = ?,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             """, (
@@ -201,6 +241,14 @@ def insert_lease(data: Dict[str, Any], document_name: str, db_path: str = DEFAUL
                 data.get("permitted_use"),
                 data.get("exclusive_use"),
                 data.get("radius_restriction"),
+                data.get("indemnifier_name"),
+                data.get("tenant_address"),
+                data.get("indemnifier_address"),
+                data.get("fixturing_period"),
+                data.get("free_rent_period"),
+                data.get("tenant_improvement_allowance"),
+                data.get("offer_to_lease_date"),
+                data.get("indemnity_agreement_date"),
                 lease_id,
             ))
             
@@ -215,8 +263,11 @@ def insert_lease(data: Dict[str, Any], document_name: str, db_path: str = DEFAUL
                     property_address, premises_description, rentable_area_sqft,
                     lease_start, lease_end, term_years, possession_date,
                     base_rent, deposit_amount, renewal_option, permitted_use,
-                    exclusive_use, radius_restriction
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    exclusive_use, radius_restriction, indemnifier_name,
+                    tenant_address, indemnifier_address, fixturing_period,
+                    free_rent_period, tenant_improvement_allowance,
+                    offer_to_lease_date, indemnity_agreement_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 document_name,
                 data.get("tenant_name"),
@@ -235,6 +286,14 @@ def insert_lease(data: Dict[str, Any], document_name: str, db_path: str = DEFAUL
                 data.get("permitted_use"),
                 data.get("exclusive_use"),
                 data.get("radius_restriction"),
+                data.get("indemnifier_name"),
+                data.get("tenant_address"),
+                data.get("indemnifier_address"),
+                data.get("fixturing_period"),
+                data.get("free_rent_period"),
+                data.get("tenant_improvement_allowance"),
+                data.get("offer_to_lease_date"),
+                data.get("indemnity_agreement_date"),
             ))
             lease_id = cursor.lastrowid
         
@@ -441,6 +500,7 @@ def log_ingestion(
     vectors_uploaded: int = 0,
     processing_time_seconds: float = 0.0,
     error_message: str = None,
+    extraction_mode: str = "full",
     db_path: str = DEFAULT_DB_PATH,
 ) -> int:
     """
@@ -453,6 +513,7 @@ def log_ingestion(
         vectors_uploaded: Number of vectors uploaded to Pinecone.
         processing_time_seconds: Time taken to process.
         error_message: Error message if failed.
+        extraction_mode: Type of extraction ('full' or 'clause_only').
         db_path: Path to the SQLite database file.
         
     Returns:
@@ -463,8 +524,8 @@ def log_ingestion(
         cursor.execute("""
             INSERT INTO ingestion_logs (
                 document_name, status, chunks_processed, vectors_uploaded,
-                processing_time_seconds, error_message
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                processing_time_seconds, error_message, extraction_mode
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
         """, (
             document_name,
             status,
@@ -472,6 +533,7 @@ def log_ingestion(
             vectors_uploaded,
             processing_time_seconds,
             error_message,
+            extraction_mode,
         ))
         return cursor.lastrowid
 

@@ -69,6 +69,15 @@ class Lease(BaseModel):
     
     # Other Parties
     indemnifier_name: Optional[str] = Field(None, description="Name(s) of indemnifier(s)")
+    
+    # Additional Due Diligence Fields
+    tenant_address: Optional[str] = Field(None, description="Tenant's address for notices")
+    indemnifier_address: Optional[str] = Field(None, description="Indemnifier's address")
+    fixturing_period: Optional[str] = Field(None, description="Fixturing period details (e.g., '90 days free possession')")
+    free_rent_period: Optional[str] = Field(None, description="Any free rent period granted to tenant")
+    tenant_improvement_allowance: Optional[str] = Field(None, description="TI allowance amount or details")
+    offer_to_lease_date: Optional[date] = Field(None, description="Date of the original Offer to Lease")
+    indemnity_agreement_date: Optional[date] = Field(None, description="Date of the Indemnity Agreement")
 
     def calculate_average_rent_psf(self) -> float:
         """
@@ -132,11 +141,13 @@ CRITICAL EXTRACTION GUIDELINES:
    - "Possession Date": Often in Schedule B, may say "estimated to be [DATE]"
    - "Commencement Date": Often defined as "expiry of the Fixturing Period" - if so, CALCULATE it by adding the Fixturing Period days to the Possession Date
    - "Expiration Date": Calculate from Commencement Date + Term Years if not explicit
-   - "Fixturing Period": Look for phrases like "X days' free possession"
+   - "Offer to Lease Date": Look for references to a prior "Offer to Lease" document and its date
+   - "Indemnity Agreement Date": Look in Schedule D or the Indemnity Agreement section
 
 2. EXCLUSIVE USE - Search for:
    - Section titled "Exclusive Use" (often in Schedules)
    - Clauses about competitors the landlord cannot lease to (e.g., "will not lease to any tenant whose principal business is...")
+   - Can also be called "restrictive covenant" or "exclusivity"
    - Extract the SPECIFIC restriction details
 
 3. RADIUS RESTRICTION - Look for:
@@ -156,6 +167,23 @@ CRITICAL EXTRACTION GUIDELINES:
    - For EACH rent step, extract: start_year, end_year, rate_psf, monthly_rent, annual_rent
    - ALWAYS extract the monthly_rent value (often labeled "Per Month" in the table)
    - If monthly_rent is not explicit, CALCULATE it: annual_rent / 12
+
+9. AREA OF PREMISES - Various synonyms are used:
+   - "Rentable Area", "Leasable Area", "Area of Premises", "GLA" - these all mean the same thing
+   - Extract as rentable_area_sqft
+
+10. ADDRESSES - Look for:
+    - Tenant Address: Usually in "Notices" section (e.g., Section 15.10) or in the preamble
+    - Indemnifier Address: Often listed with the Indemnifier name in the preamble or Schedule D
+
+11. PERIODS & ALLOWANCES:
+    - Fixturing Period: Look for "X days' free possession" or "fixturing period" in Schedule B
+    - Free Rent Period: Any period where tenant pays no rent (distinct from fixturing)
+    - Tenant Improvement Allowance (TI Allowance): Landlord contribution for tenant buildout
+
+12. USE CLAUSE - Look for:
+    - "Permitted Use" section describing what business can be operated
+    - Often in Section 8.01 or Schedule B
 
 BE THOROUGH - missing data often exists in Schedules at the end of the document."""),
             ("human", "Lease Text:\n{text}")

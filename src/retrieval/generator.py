@@ -10,8 +10,9 @@ This module is responsible for:
 """
 
 import os
+import re
 import sys
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 # Add project root to path for config imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
@@ -101,6 +102,29 @@ class RAGGenerator:
         
         return "\n\n".join(context_parts)
     
+    def _parse_confidence(self, answer: str) -> Tuple[str, int]:
+        """
+        Parse the confidence score from the LLM response.
+        
+        Args:
+            answer: Raw LLM response that may contain [CONFIDENCE: X%]
+            
+        Returns:
+            Tuple of (cleaned_answer, confidence_percentage)
+        """
+        # Look for [CONFIDENCE: X%] pattern
+        pattern = r'\[CONFIDENCE:\s*(\d+)%?\]'
+        match = re.search(pattern, answer, re.IGNORECASE)
+        
+        if match:
+            confidence = int(match.group(1))
+            # Remove the confidence tag from the answer
+            cleaned = re.sub(pattern, '', answer, flags=re.IGNORECASE).strip()
+            return cleaned, min(100, max(0, confidence))  # Clamp to 0-100
+        
+        # No confidence found - default to 75% (reasonable answer)
+        return answer, 75
+    
     def generate_answer(
         self,
         query: str,
@@ -138,16 +162,19 @@ class RAGGenerator:
         context_documents: List[Document],
     ) -> dict:
         """
-        Generate answer with source tracking.
+        Generate answer with source tracking and confidence score.
         
         Args:
             query: The user's question.
             context_documents: List of retrieved Document objects.
             
         Returns:
-            Dictionary with 'answer' and 'sources' keys.
+            Dictionary with 'answer', 'confidence', and 'sources' keys.
         """
-        answer = self.generate_answer(query, context_documents)
+        raw_answer = self.generate_answer(query, context_documents)
+        
+        # Parse out the confidence score
+        answer, confidence = self._parse_confidence(raw_answer)
         
         # Extract source references
         sources = []
@@ -162,6 +189,7 @@ class RAGGenerator:
         
         return {
             "answer": answer,
+            "confidence": confidence,
             "sources": sources,
             "query": query,
         }

@@ -19,7 +19,7 @@ CRITICAL INSTRUCTIONS:
    - Definitions that may appear inline within other clauses
 3. Only state "The provided lease documents do not contain this information" if you have thoroughly searched and confirmed the term/concept is truly absent.
 4. DO NOT hallucinate or invent definitions not present in the context.
-5. When possible, cite the specific Lease Name, Section, or Article from the context.
+5. When citing sources, reference the Lease Name and Article/Section (e.g., "According to the Church's Chicken lease, Section 5.01..."). Do NOT mention document numbers, chunks, or retrieval details.
 6. Be precise and factual. Use direct quotes when helpful.
 7. If multiple leases define the same term, present definitions from all of them.
 
@@ -29,12 +29,22 @@ FORMATTING INSTRUCTIONS:
 - Use bullet points for non-sequential items
 - Break up long responses into clear paragraphs
 
+CONFIDENCE RATING:
+At the END of your response, on a new line, provide a confidence rating in this exact format:
+[CONFIDENCE: X%]
+
+Where X is your confidence percentage (0-100) based on:
+- 90-100%: Direct, explicit answer found in the documents
+- 70-89%: Answer well-supported but requires some interpretation
+- 50-69%: Partial information found, some inference needed
+- Below 50%: Limited relevant information, significant uncertainty
+
 CONTEXT FROM RETRIEVED DOCUMENTS:
 {context}"""
 
 RAG_HUMAN_TEMPLATE = """Question: {question}
 
-Please provide a detailed, accurate answer based on the lease documents above. Format your response with clear structure and use **bold** for important terms."""
+Please provide a detailed, accurate answer based on the lease documents above. Format your response with clear structure and use **bold** for important terms. End with your confidence rating."""
 
 
 # --- Query Router Prompts ---

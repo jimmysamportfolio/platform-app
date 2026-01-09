@@ -36,6 +36,7 @@ async function apiFetch<T>(
 export interface ChatResponse {
     answer: string;
     route: string;
+    confidence: number;  // 0-100 confidence percentage
     sources: string[];
 }
 
@@ -172,3 +173,129 @@ export async function compareClauses(leaseIds: number[]): Promise<ClauseComparis
         body: JSON.stringify({ lease_ids: leaseIds }),
     });
 }
+
+// --- Document Generation API ---
+
+export interface RentRowInput {
+    lease_year_start: number;
+    lease_year_end: number;
+    per_sqft: number;
+    per_annum: number;
+    per_month: number;
+}
+
+export interface GenerateDocumentInput {
+    tenant_name: string;
+    tenant_address: string;
+    indemnifier_name: string;
+    indemnifier_address: string;
+    premises_unit: string;
+    rentable_area: string;
+    lease_date: string;
+    initial_term: string;
+    renewal_option_count: number;
+    renewal_option_years: number;
+    possession_date: string;
+    fixturing_period: string;
+    offer_to_lease_date: string;
+    indemnity_date: string;
+    rent_schedule: RentRowInput[];
+    deposit: string;
+    tenant_improvement_allowance: string;
+    permitted_use: string;
+    trade_name: string;
+    exclusive_use: string;
+    radius_restriction: string;
+}
+
+export async function generateDocument(input: GenerateDocumentInput): Promise<Blob> {
+    const url = `${API_BASE_URL}/api/documents/generate`;
+
+    const response = await fetch(url, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+        },
+        body: JSON.stringify(input),
+    });
+
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ detail: "Unknown error" }));
+        throw new Error(error.detail || `API Error: ${response.status}`);
+    }
+
+    return response.blob();
+}
+
+// --- Key Terms API ---
+
+export interface KeyTermsLease {
+    id: number;
+    tenant_name: string;
+    trade_name: string | null;
+    tenant_address: string | null;
+    indemnifier_name: string | null;
+    indemnifier_address: string | null;
+    lease_date: string | null;
+    premises: string | null;
+    rentable_area_sqft: number | null;
+    term_years: number | null;
+    renewal_option: string | null;
+    deposit_amount: number | null;
+    permitted_use: string | null;
+    fixturing_period: string | null;
+    free_rent_period: string | null;
+    possession_date: string | null;
+    tenant_improvement_allowance: string | null;
+    exclusive_use: string | null;
+}
+
+export interface KeyTermsResponse {
+    leases: KeyTermsLease[];
+    count: number;
+}
+
+export async function getKeyTerms(leaseIds: number[]): Promise<KeyTermsResponse> {
+    const idsParam = leaseIds.join(",");
+    return apiFetch<KeyTermsResponse>(`/api/extraction/key-terms?lease_ids=${idsParam}`);
+}
+
+// --- Ingestion API ---
+
+export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+
+export interface PendingFile {
+    file_path: string;
+    file_name: string;
+    detected_at: string;
+}
+
+export interface PendingFilesResponse {
+    pending_files: PendingFile[];
+    count: number;
+}
+
+export async function getPendingFiles(): Promise<PendingFilesResponse> {
+    return apiFetch<PendingFilesResponse>("/api/ingestion/pending");
+}
+
+export interface ProcessIngestionResult {
+    success: boolean;
+    file_name: string;
+    mode?: string;
+    chunks_processed?: number;
+    vectors_uploaded?: number;
+    processing_time?: number;
+    error?: string;
+}
+
+export async function processIngestion(
+    filePath: string,
+    mode: "full" | "clause_only"
+): Promise<ProcessIngestionResult> {
+    return apiFetch<ProcessIngestionResult>("/api/ingestion/process", {
+        method: "POST",
+        body: JSON.stringify({ file_path: filePath, mode }),
+    });
+}
+

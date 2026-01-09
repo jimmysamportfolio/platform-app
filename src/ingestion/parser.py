@@ -45,7 +45,11 @@ class DocumentParser:
 
         # Convert DOCX to PDF first (LlamaParse works better with PDFs)
         if file_path.lower().endswith('.docx'):
-            pdf_path = file_path.replace('.docx', '.pdf')
+            # Convert to temp folder to avoid triggering file watcher again
+            temp_dir = os.path.join("data", "temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            pdf_name = os.path.basename(file_path).replace('.docx', '.pdf')
+            pdf_path = os.path.join(temp_dir, pdf_name)
             
             if not os.path.exists(pdf_path):
                 print(f"Converting DOCX to PDF...")

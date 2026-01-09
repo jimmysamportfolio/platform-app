@@ -1,21 +1,25 @@
 """
-File Watchdog Module
+File Watchdog Module (Queue Mode)
 
-Monitors an input folder for new documents and triggers ingestion automatically.
+Monitors an input folder for new documents and queues them for user selection.
+Instead of auto-processing, files wait for the user to choose extraction mode.
+
 This module is responsible for:
 - Watching the 'input' folder for new files
-- Triggering the ingestion pipeline when files are added
-- Avoiding re-processing of existing files on startup
-- Moving processed files to a 'processed' folder
-- Logging ingestion results to SQLite database
+- Queuing detected files for user decision
+- Broadcasting events via WebSocket to frontend
+- Processing files with the selected mode (full or clause-only)
 """
 
 import os
 import sys
 import time
 import shutil
+import asyncio
 from pathlib import Path
-from typing import Set
+from typing import Set, List, Dict, Optional, Callable
+from dataclasses import dataclass, field
+from datetime import datetime
 
 # Add project root and src to path for imports
 PROJECT_ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -38,15 +42,25 @@ from utils.db import init_db, log_ingestion, is_document_processed
 load_dotenv()
 
 
+@dataclass
+class PendingFile:
+    """Represents a file waiting for user decision."""
+    file_path: str
+    file_name: str
+    detected_at: datetime = field(default_factory=datetime.now)
+
+
 class IngestionHandler(FileSystemEventHandler):
     """
-    File system event handler that triggers ingestion on new files.
+    File system event handler that queues files for user decision.
     
-    Only processes files that are:
-    1. Newly created (not pre-existing on startup)
-    2. Have supported extensions (.pdf, .docx, .doc, .md)
-    3. Not already processed (checked against SQLite database)
+    Files are NOT auto-processed. Instead, they are added to a pending queue
+    and the frontend is notified via a callback. User then selects extraction mode.
     """
+    
+    # Class-level shared state for pending files (accessible from API)
+    _pending_files: Dict[str, PendingFile] = {}
+    _new_file_callbacks: List[Callable] = []
     
     def __init__(
         self,
@@ -54,14 +68,6 @@ class IngestionHandler(FileSystemEventHandler):
         processed_folder: str = WATCHDOG_PROCESSED_FOLDER,
         db_path: str = DEFAULT_DB_PATH,
     ):
-        """
-        Initialize the ingestion handler.
-        
-        Args:
-            input_folder: Folder to watch for new files.
-            processed_folder: Folder to move processed files to.
-            db_path: Path to SQLite database for logging.
-        """
         super().__init__()
         
         self.input_folder = Path(input_folder).resolve()
@@ -72,20 +78,19 @@ class IngestionHandler(FileSystemEventHandler):
         self.input_folder.mkdir(parents=True, exist_ok=True)
         self.processed_folder.mkdir(parents=True, exist_ok=True)
         
-        # Initialize database (creates ingestion_logs table if needed)
+        # Initialize database
         init_db(db_path)
         
-        # Initialize pipeline (lazy - will be created on first use)
+        # Initialize pipeline (lazy)
         self._pipeline = None
         
         # Track files that existed on startup (to ignore them)
         self.startup_files: Set[str] = self._get_existing_files()
         
-        print(f"✅ Watchdog initialized")
+        print(f"✅ Watchdog initialized (Queue Mode)")
         print(f"   📂 Watching: {self.input_folder}")
         print(f"   📁 Processed folder: {self.processed_folder}")
-        print(f"   🗄️  Database: {self.db_path}")
-        print(f"   📋 Files on startup (will be ignored): {len(self.startup_files)}")
+        print(f"   📋 Files on startup (ignored): {len(self.startup_files)}")
     
     def _get_existing_files(self) -> Set[str]:
         """Get set of files that exist on startup."""
@@ -110,8 +115,31 @@ class IngestionHandler(FileSystemEventHandler):
             print("✅ Pipeline ready")
         return self._pipeline
     
+    @classmethod
+    def register_callback(cls, callback: Callable):
+        """Register a callback to be called when new files are detected."""
+        cls._new_file_callbacks.append(callback)
+    
+    @classmethod
+    def get_pending_files(cls) -> List[Dict]:
+        """Get list of pending files waiting for user decision."""
+        return [
+            {
+                "file_path": pf.file_path,
+                "file_name": pf.file_name,
+                "detected_at": pf.detected_at.isoformat(),
+            }
+            for pf in cls._pending_files.values()
+        ]
+    
+    @classmethod
+    def remove_pending(cls, file_name: str):
+        """Remove a file from the pending queue."""
+        if file_name in cls._pending_files:
+            del cls._pending_files[file_name]
+    
     def on_created(self, event):
-        """Handle file creation events."""
+        """Handle file creation events - add to queue."""
         if event.is_directory:
             return
         
@@ -122,82 +150,135 @@ class IngestionHandler(FileSystemEventHandler):
         if file_path.suffix.lower() not in WATCHDOG_SUPPORTED_EXTENSIONS:
             return
         
-        # Skip temporary Word files (start with ~$)
+        # Skip temporary Word files
         if file_name.startswith("~$"):
             return
         
         # Skip files that existed on startup
         if file_name in self.startup_files:
-            print(f"⏭️  Skipping (existed on startup): {file_name}")
             return
         
-        # Skip already processed files (check database)
+        # Skip already processed files
         if is_document_processed(file_name, self.db_path):
-            print(f"⏭️  Skipping (already in database): {file_name}")
+            print(f"⏭️  Skipping (already processed): {file_name}")
             return
         
-        # Wait a moment for file to finish writing
+        # Wait for file to finish writing
         time.sleep(1)
         
-        # Process the file
-        self._process_file(file_path)
+        # Add to pending queue
+        pending = PendingFile(
+            file_path=str(file_path),
+            file_name=file_name,
+        )
+        IngestionHandler._pending_files[file_name] = pending
+        
+        print(f"\n📄 New file detected (queued): {file_name}")
+        print(f"   Waiting for user to select extraction mode...")
+        
+        # Notify callbacks (for WebSocket broadcast)
+        for callback in IngestionHandler._new_file_callbacks:
+            try:
+                callback(file_name, str(file_path))
+            except Exception as e:
+                print(f"   Warning: Callback failed: {e}")
     
-    def _process_file(self, file_path: Path):
-        """Run ingestion pipeline on a file."""
-        file_name = file_path.name
+    def process_file(self, file_path: str, mode: str = "full") -> Dict:
+        """
+        Process a file with the specified mode.
+        
+        Args:
+            file_path: Path to the file to process.
+            mode: "full" for complete pipeline, "clause_only" for quick extraction.
+            
+        Returns:
+            Dict with processing result.
+        """
+        file_name = os.path.basename(file_path)
         
         print(f"\n{'='*60}")
-        print(f"📄 New file detected: {file_name}")
+        print(f"📄 Processing: {file_name} (mode: {mode})")
         print(f"{'='*60}")
         
         try:
-            # Run the ingestion pipeline
-            result = self.pipeline.run(str(file_path))
+            if mode == "clause_only":
+                result = self.pipeline.run_clause_only(file_path)
+            else:
+                result = self.pipeline.run(file_path)
             
             if result.success:
                 print(f"✅ Successfully processed: {file_name}")
-                print(f"   📊 Chunks: {result.chunks_processed}")
-                print(f"   🔢 Vectors: {result.vectors_uploaded}")
-                print(f"   ⏱️  Time: {result.processing_time_seconds:.1f}s")
                 
-                # Log success to database
+                # Log success
                 log_ingestion(
                     document_name=file_name,
                     status="success",
                     chunks_processed=result.chunks_processed,
                     vectors_uploaded=result.vectors_uploaded,
                     processing_time_seconds=result.processing_time_seconds,
+                    extraction_mode=mode,
                     db_path=self.db_path,
                 )
                 
                 # Move to processed folder
                 dest = self.processed_folder / file_name
-                shutil.move(str(file_path), str(dest))
-                print(f"   📁 Moved to: {dest}")
-            else:
-                print(f"❌ Failed to process: {file_name}")
-                print(f"   Error: {result.error_message}")
+                if Path(file_path).exists():
+                    shutil.move(file_path, str(dest))
+                    print(f"   📁 Moved to: {dest}")
                 
-                # Log failure to database
+                # Remove from pending
+                IngestionHandler.remove_pending(file_name)
+                
+                return {
+                    "success": True,
+                    "file_name": file_name,
+                    "mode": mode,
+                    "chunks_processed": result.chunks_processed,
+                    "vectors_uploaded": result.vectors_uploaded,
+                    "processing_time": result.processing_time_seconds,
+                }
+            else:
+                print(f"❌ Failed: {result.error_message}")
                 log_ingestion(
                     document_name=file_name,
                     status="failed",
                     error_message=result.error_message,
+                    extraction_mode=mode,
                     db_path=self.db_path,
                 )
+                IngestionHandler.remove_pending(file_name)
+                
+                return {
+                    "success": False,
+                    "file_name": file_name,
+                    "error": result.error_message,
+                }
                 
         except Exception as e:
-            print(f"❌ Error processing {file_name}: {e}")
-            
-            # Log exception to database
+            print(f"❌ Error: {e}")
             log_ingestion(
                 document_name=file_name,
                 status="failed",
                 error_message=str(e),
+                extraction_mode=mode,
                 db_path=self.db_path,
             )
-        
-        print(f"{'='*60}\n")
+            IngestionHandler.remove_pending(file_name)
+            
+            return {
+                "success": False,
+                "file_name": file_name,
+                "error": str(e),
+            }
+
+
+# Global handler instance (for API access)
+_handler_instance: Optional[IngestionHandler] = None
+
+
+def get_handler() -> Optional[IngestionHandler]:
+    """Get the global handler instance."""
+    return _handler_instance
 
 
 def run_watchdog(
@@ -205,24 +286,19 @@ def run_watchdog(
     processed_folder: str = WATCHDOG_PROCESSED_FOLDER,
     db_path: str = DEFAULT_DB_PATH,
 ):
-    """
-    Start the file watchdog.
+    """Start the file watchdog in queue mode."""
+    global _handler_instance
     
-    Args:
-        input_folder: Folder to watch for new files.
-        processed_folder: Folder to move processed files to.
-        db_path: Path to SQLite database for logging.
-    """
     print("\n" + "="*60)
-    print("🐕 STARTING FILE WATCHDOG")
+    print("🐕 STARTING FILE WATCHDOG (Queue Mode)")
     print("="*60 + "\n")
     
     # Create event handler
-    handler = IngestionHandler(input_folder, processed_folder, db_path)
+    _handler_instance = IngestionHandler(input_folder, processed_folder, db_path)
     
     # Create and configure observer
     observer = Observer()
-    observer.schedule(handler, str(handler.input_folder), recursive=False)
+    observer.schedule(_handler_instance, str(_handler_instance.input_folder), recursive=False)
     
     # Start watching
     observer.start()
@@ -232,11 +308,11 @@ def run_watchdog(
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\n⏹️  Stopping watchdog...")
+        print("\n🛑 Stopping File Watcher...")
         observer.stop()
     
     observer.join()
-    print("✅ Watchdog stopped.")
+    print("✅ File Watcher stopped")
 
 
 # --- Entry Point ---
