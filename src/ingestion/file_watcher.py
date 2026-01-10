@@ -226,6 +226,15 @@ class IngestionHandler(FileSystemEventHandler):
                     shutil.move(file_path, str(dest))
                     print(f"   📁 Moved to: {dest}")
                 
+                # Also copy the converted PDF if it exists (for document preview)
+                if file_name.lower().endswith('.docx'):
+                    pdf_name = file_name[:-5] + '.pdf'  # Replace .docx with .pdf
+                    temp_pdf = Path("data/temp") / pdf_name
+                    if temp_pdf.exists():
+                        dest_pdf = self.processed_folder / pdf_name
+                        shutil.copy2(str(temp_pdf), str(dest_pdf))
+                        print(f"   📄 Copied PDF for preview: {dest_pdf}")
+                
                 # Remove from pending
                 IngestionHandler.remove_pending(file_name)
                 

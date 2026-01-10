@@ -26,7 +26,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import { getPortfolioSummary, getDocumentContent, deleteDocument, PortfolioSummary } from "@/lib/api";
+import { getPortfolioSummary, deleteDocument, PortfolioSummary } from "@/lib/api";
 import { TrendingUp, Search, SlidersHorizontal, ArrowUpDown, ChevronDown, Trash2 } from "lucide-react";
 
 function formatCurrency(value: number | null | undefined): string {
@@ -56,15 +56,14 @@ export default function AnalyticsPage() {
     const [filterBuilding, setFilterBuilding] = useState<string>("all");
     const [sortBy, setSortBy] = useState<SortOption>("tenant");
 
-    // Document viewer state
-    const [viewerOpen, setViewerOpen] = useState(false);
-    const [viewingDoc, setViewingDoc] = useState<{ filename: string; content: string } | null>(null);
-    const [viewerLoading, setViewerLoading] = useState(false);
-
     // Delete state
     const [deleteOpen, setDeleteOpen] = useState(false);
     const [deletingDoc, setDeletingDoc] = useState<{ name: string; display: string } | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
+
+    // Document preview state
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string | null; loading?: boolean } | null>(null);
 
     async function fetchData() {
         setIsLoading(true);
@@ -129,19 +128,23 @@ export default function AnalyticsPage() {
     }, [data, search, filterBuilding, sortBy]);
 
     const handleRowClick = async (lease: PortfolioSummary["lease_breakdown"][0]) => {
-        setViewerLoading(true);
-        setViewerOpen(true);
+        // Fetch PDF as blob to avoid cross-origin iframe issues
+        setPreviewDoc({ name: lease.document_name, url: null, loading: true });
+        setPreviewOpen(true);
+
         try {
-            // Use precise document name for lookup
-            const content = await getDocumentContent(lease.document_name);
-            setViewingDoc(content);
-        } catch (err) {
-            setViewingDoc({
-                filename: lease.document_name,
-                content: `Error loading document: ${err instanceof Error ? err.message : "Unknown error"}`,
-            });
-        } finally {
-            setViewerLoading(false);
+            // Use local Next.js proxy to fetch document
+            const proxyUrl = `/api/documents/${encodeURIComponent(lease.document_name)}`;
+            const response = await fetch(proxyUrl);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            setPreviewDoc({ name: lease.document_name, url: blobUrl, loading: false });
+        } catch (error) {
+            console.error("Failed to load document:", error);
+            setPreviewDoc({ name: lease.document_name, url: null, loading: false });
         }
     };
 
@@ -369,26 +372,6 @@ export default function AnalyticsPage() {
                 </Card >
             </div >
 
-            {/* Document Viewer Dialog */}
-            < Dialog open={viewerOpen} onOpenChange={setViewerOpen} >
-                <DialogContent className="max-w-4xl max-h-[85vh]">
-                    <DialogHeader>
-                        <DialogTitle className="text-base font-medium">
-                            {viewingDoc?.filename || "Loading..."}
-                        </DialogTitle>
-                    </DialogHeader>
-                    <ScrollArea className="h-[65vh] mt-4">
-                        {viewerLoading ? (
-                            <div className="text-muted-foreground text-sm">Loading document...</div>
-                        ) : (
-                            <pre className="text-sm whitespace-pre-wrap font-mono bg-muted p-4 rounded-lg">
-                                {viewingDoc?.content}
-                            </pre>
-                        )}
-                    </ScrollArea>
-                </DialogContent>
-            </Dialog >
-
             {/* Delete Confirmation Dialog */}
             < Dialog open={deleteOpen} onOpenChange={setDeleteOpen} >
                 <DialogContent>
@@ -404,6 +387,43 @@ export default function AnalyticsPage() {
                     </div>
                 </DialogContent>
             </Dialog >
+
+            {/* Document Preview Modal */}
+            <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+                <DialogContent className="!max-w-none w-[95vw] h-[95vh] p-0 flex flex-col">
+                    <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+                        <div className="flex items-center justify-between">
+                            <DialogTitle className="text-base font-medium truncate pr-4">
+                                {previewDoc?.name || "Document"}
+                            </DialogTitle>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => previewDoc?.url && window.open(previewDoc.url, "_blank")}
+                            >
+                                Open in New Tab
+                            </Button>
+                        </div>
+                    </DialogHeader>
+                    <div className="flex-1 min-h-0">
+                        {previewDoc?.loading ? (
+                            <div className="flex items-center justify-center h-full">
+                                <div className="text-muted-foreground">Loading document...</div>
+                            </div>
+                        ) : previewDoc?.url ? (
+                            <iframe
+                                src={previewDoc.url}
+                                className="w-full h-full border-0"
+                                title={previewDoc.name}
+                            />
+                        ) : (
+                            <div className="flex items-center justify-center h-full">
+                                <div className="text-muted-foreground">Failed to load document</div>
+                            </div>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
         </ScrollArea >
     );
 }

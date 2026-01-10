@@ -131,6 +131,14 @@ export async function deleteDocument(documentName: string): Promise<DeleteRespon
     });
 }
 
+/**
+ * Get the URL to view/download the original document file (PDF/DOCX).
+ */
+export function getDocumentFileUrl(documentName: string): string {
+    const encodedName = encodeURIComponent(documentName);
+    return `${API_BASE_URL}/api/documents/${encodedName}/file`;
+}
+
 // --- Clause Comparison API ---
 
 export interface LeaseOption {

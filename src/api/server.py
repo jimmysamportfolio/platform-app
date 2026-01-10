@@ -42,6 +42,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Initialize components lazily
@@ -187,25 +188,112 @@ async def list_documents():
 async def get_document_content(document_name: str):
     """Get the raw markdown content of a parsed document."""
     try:
-        # Find the parsed markdown file
+        # Strip .docx/.pdf extension if present to get base name
+        base_name = document_name
+        for ext in [".docx", ".pdf", ".doc"]:
+            if base_name.lower().endswith(ext):
+                base_name = base_name[:-len(ext)]
+                break
+        
+        # First, try to find parsed markdown in data/parsed
         parsed_dir = Path("data/parsed")
+        matching_files = []
         
-        # Look for a matching file
-        matching_files = list(parsed_dir.glob(f"*{document_name}*"))
-        if not matching_files:
-            # Try direct match
-            for md_file in parsed_dir.glob("*.md"):
-                if document_name.lower() in md_file.stem.lower():
-                    matching_files.append(md_file)
+        if parsed_dir.exists():
+            # Try exact match with .md extension
+            exact_match = parsed_dir / f"{base_name}.md"
+            if exact_match.exists():
+                matching_files.append(exact_match)
+            else:
+                # Fuzzy match - look for files containing the base name
+                for md_file in parsed_dir.glob("*.md"):
+                    if base_name.lower() in md_file.stem.lower():
+                        matching_files.append(md_file)
         
-        if not matching_files:
-            raise HTTPException(status_code=404, detail="Document not found")
+        if matching_files:
+            content = matching_files[0].read_text(encoding="utf-8")
+            return {
+                "filename": matching_files[0].name,
+                "content": content
+            }
         
-        content = matching_files[0].read_text(encoding="utf-8")
-        return {
-            "filename": matching_files[0].name,
-            "content": content
-        }
+        # Fallback: try the file watcher input folder for original documents
+        input_dir = Path(WATCHDOG_INPUT_FOLDER)
+        if input_dir.exists():
+            # Look for original document
+            for original_file in input_dir.iterdir():
+                if base_name.lower() in original_file.stem.lower():
+                    # For non-text files, just return metadata
+                    if original_file.suffix.lower() in [".docx", ".pdf", ".doc"]:
+                        return {
+                            "filename": original_file.name,
+                            "content": f"[Original document: {original_file.name}]\n\nThis document has not been parsed yet. The original file is located at:\n{original_file.absolute()}"
+                        }
+                    else:
+                        content = original_file.read_text(encoding="utf-8")
+                        return {
+                            "filename": original_file.name,
+                            "content": content
+                        }
+        
+        raise HTTPException(status_code=404, detail="Document not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/documents/{document_name}/file")
+async def get_document_file(document_name: str):
+    """Serve the original document file (PDF/DOCX) for viewing."""
+    from fastapi.responses import Response
+    
+    try:
+        # Strip extension to get base name
+        base_name = document_name
+        for ext in [".docx", ".pdf", ".doc"]:
+            if base_name.lower().endswith(ext):
+                base_name = base_name[:-len(ext)]
+                break
+        
+        # Look in processed folder for the original file
+        processed_dir = Path(WATCHDOG_PROCESSED_FOLDER)
+        
+        if processed_dir.exists():
+            # Try to find matching file - prefer PDF for better browser viewing
+            pdf_match = None
+            docx_match = None
+            
+            for file in processed_dir.iterdir():
+                if base_name.lower() in file.stem.lower():
+                    if file.suffix.lower() == ".pdf":
+                        pdf_match = file
+                    elif file.suffix.lower() in [".docx", ".doc"]:
+                        docx_match = file
+            
+            # Prefer PDF (better browser support), fall back to DOCX
+            match = pdf_match or docx_match
+            
+            if match:
+                # Set appropriate media type
+                media_types = {
+                    ".pdf": "application/pdf",
+                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    ".doc": "application/msword",
+                }
+                media_type = media_types.get(match.suffix.lower(), "application/octet-stream")
+                
+                # Read file content and return as Response (inherits CORS from middleware)
+                content = match.read_bytes()
+                return Response(
+                    content=content,
+                    media_type=media_type,
+                    headers={
+                        "Content-Disposition": f"inline; filename=\"{match.name}\"",
+                    },
+                )
+        
+        raise HTTPException(status_code=404, detail="Document file not found")
     except HTTPException:
         raise
     except Exception as e:
