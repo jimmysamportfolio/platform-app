@@ -62,6 +62,7 @@ CLAUSE_TYPES = [
 ]
 
 # --- Watchdog Configuration ---
-WATCHDOG_INPUT_FOLDER = "input"
-WATCHDOG_PROCESSED_FOLDER = "processed"
+import os
+WATCHDOG_INPUT_FOLDER = os.environ.get("WATCHDOG_INPUT_FOLDER", "input")
+WATCHDOG_PROCESSED_FOLDER = os.environ.get("WATCHDOG_PROCESSED_FOLDER", "processed")
 WATCHDOG_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc", ".md"}

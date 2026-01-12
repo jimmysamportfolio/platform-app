@@ -74,8 +74,9 @@ class IngestionHandler(FileSystemEventHandler):
         self.processed_folder = Path(processed_folder).resolve()
         self.db_path = db_path
         
-        # Create folders if they don't exist
-        self.input_folder.mkdir(parents=True, exist_ok=True)
+        # Create processed folder if it doesn't exist (input may be read-only mount)
+        if not self.input_folder.exists():
+            self.input_folder.mkdir(parents=True, exist_ok=True)
         self.processed_folder.mkdir(parents=True, exist_ok=True)
         
         # Initialize database

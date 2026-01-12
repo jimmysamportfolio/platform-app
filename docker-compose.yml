@@ -23,27 +23,18 @@ services:
     container_name: platform-backend
     restart: unless-stopped
 
-    # Environment file for secrets (API keys, etc.)
     env_file:
       - .env
-
-    # Override environment variables for Docker network
     environment:
-      # Tell the app it's running in Docker
       - DOCKER_ENV=true
-
-    # Mount volumes for persistent data
-    # These directories persist across container restarts
+      # Network share is the input folder
+      - WATCHDOG_INPUT_FOLDER=/data/98. Company Brain Trial
+      - WATCHDOG_PROCESSED_FOLDER=/app/processed
     volumes:
-      # SQLite database and parsed documents
       - ./data:/app/data
-      # Input folder for file watcher
-      - ./input:/app/input
-      # Processed files
+      - /data:/data:ro
       - ./processed:/app/processed
-      # Generated documents
       - ./output:/app/output
-      # FlashRank model cache (avoids re-downloading)
       - flashrank_cache:/app/.flashrank_cache
 
     # Internal network - not exposed to host directly
