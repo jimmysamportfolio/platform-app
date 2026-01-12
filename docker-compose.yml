@@ -1,0 +1,132 @@
+# =============================================================================
+# Docker Compose - Legal Lease RAG Platform
+# =============================================================================
+# Orchestrates all services:
+#   - backend:  FastAPI API server (Python)
+#   - frontend: Next.js dashboard (Node.js)
+#   - nginx:    Reverse proxy (routes traffic, SSL termination)
+#
+# Usage:
+#   docker compose up -d --build    # Build and start all services
+#   docker compose logs -f          # View all logs
+#   docker compose down              # Stop all services
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Backend: FastAPI + Gunicorn
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: platform-backend
+    restart: unless-stopped
+
+    # Environment file for secrets (API keys, etc.)
+    env_file:
+      - .env
+
+    # Override environment variables for Docker network
+    environment:
+      # Tell the app it's running in Docker
+      - DOCKER_ENV=true
+
+    # Mount volumes for persistent data
+    # These directories persist across container restarts
+    volumes:
+      # SQLite database and parsed documents
+      - ./data:/app/data
+      # Input folder for file watcher
+      - ./input:/app/input
+      # Processed files
+      - ./processed:/app/processed
+      # Generated documents
+      - ./output:/app/output
+      # FlashRank model cache (avoids re-downloading)
+      - flashrank_cache:/app/.flashrank_cache
+
+    # Internal network - not exposed to host directly
+    # Nginx will proxy to this service
+    expose:
+      - "8000"
+
+    # Health check
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+    # Dependency on other services (if any)
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Frontend: Next.js
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: platform-frontend
+    restart: unless-stopped
+
+    environment:
+      - NODE_ENV=production
+      # API URL relative to browser - Nginx proxies /api to backend
+      - NEXT_PUBLIC_API_URL=
+
+    # Internal network only
+    expose:
+      - "3000"
+
+    # Wait for backend to be healthy before starting
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    networks:
+      - app-network
+
+  # ---------------------------------------------------------------------------
+  # Nginx: Reverse Proxy
+  # ---------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: platform-nginx
+    restart: unless-stopped
+
+    # Expose to the outside world
+    ports:
+      - "80:80"
+      # Uncomment for HTTPS (you'll need SSL certs):
+      # - "443:443"
+
+      # Mount nginx configuration
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Uncomment for SSL certificates:
+      # - ./nginx/ssl:/etc/nginx/ssl:ro
+
+    depends_on:
+      - frontend
+      - backend
+
+    networks:
+      - app-network
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  app-network:
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  # Named volume for FlashRank model cache
+  flashrank_cache:

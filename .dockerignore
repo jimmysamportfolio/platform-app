@@ -1,0 +1,64 @@
+# =============================================================================
+# .dockerignore - Backend
+# =============================================================================
+# Files/folders to exclude from Docker build context.
+# This makes builds MUCH faster and keeps images smaller.
+# =============================================================================
+
+# Python virtual environment (we create a new one in the container)
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Git
+.git/
+.gitignore
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Docker files (don't need to copy into the container)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Frontend (has its own Dockerfile)
+frontend/
+
+# Local development files
+.env.local
+.env.development
+
+# Test and documentation
+tests/
+*.md
+!README.md
+
+# Jupyter notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Large data files that will be mounted as volumes
+# (comment out if you want to bake data into the image)
+# data/
+# input/
+# output/
+# processed/
+
+# FlashRank cache (will be mounted as volume)
+.flashrank_cache/

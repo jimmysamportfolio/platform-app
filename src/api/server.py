@@ -36,9 +36,22 @@ app = FastAPI(
 )
 
 # Enable CORS for frontend
+# In Docker, requests come through nginx so we need to be more permissive
+# In local dev, requests come from localhost:3000
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",    # Local development
+    "http://127.0.0.1:3000",    # Local development (alternative)
+    "http://localhost",          # Docker via nginx (port 80)
+    "http://127.0.0.1",          # Docker via nginx (alternative)
+]
+
+# If running in Docker, allow the nginx proxy
+if os.environ.get("DOCKER_ENV"):
+    ALLOWED_ORIGINS.append("*")  # Nginx handles all routing
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=ALLOWED_ORIGINS if not os.environ.get("DOCKER_ENV") else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
