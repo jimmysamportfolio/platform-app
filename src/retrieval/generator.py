@@ -180,6 +180,7 @@ class RAGGenerator:
         sources = []
         for doc in context_documents:
             source = {
+                "document_name": doc.metadata.get("source_document", doc.metadata.get("document_name", "")),
                 "tenant": doc.metadata.get("tenant_name", "Unknown"),
                 "section": doc.metadata.get("source_section", ""),
                 "reference": doc.metadata.get("source_reference", ""),

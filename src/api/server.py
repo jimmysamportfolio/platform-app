@@ -146,14 +146,39 @@ class ChatResponse(BaseModel):
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     """Send a message to the RAG system and get a response."""
+    from src.utils.db import get_lease_by_tenant
+    
     try:
         orchestrator = get_orchestrator()
         response = orchestrator.query(request.message)
+        
+        # Extract document names from sources
+        # First try source_document, then document_name, finally lookup by tenant
+        source_docs = []
+        seen = set()
+        print(f"[DEBUG] Response sources: {response.sources[:3]}")
+        for s in response.sources[:3]:
+            doc_name = s.get("document_name") or s.get("source_document") or ""
+            
+            # If no document name, try to lookup by tenant
+            if not doc_name:
+                tenant_name = s.get("tenant")
+                if tenant_name and tenant_name != "Unknown":
+                    lease = get_lease_by_tenant(tenant_name)
+                    if lease:
+                        doc_name = lease.get("document_name", "")
+                        print(f"[DEBUG] Looked up tenant '{tenant_name}' -> doc: '{doc_name}'")
+            
+            if doc_name and doc_name not in seen:
+                source_docs.append(doc_name)
+                seen.add(doc_name)
+        
+        print(f"[DEBUG] Final source_docs: {source_docs}")
         return ChatResponse(
             answer=response.answer,
             route=response.route,
             confidence=getattr(response, 'confidence', 75),
-            sources=[s.get("document_name", "Unknown") for s in response.sources[:3]]
+            sources=source_docs
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -256,8 +281,11 @@ async def get_document_file(document_name: str):
                 base_name = base_name[:-len(ext)]
                 break
         
+        print(f"[DEBUG] get_document_file: Request for '{document_name}' -> Base: '{base_name}'")
+
         # Look in processed folder for the original file
         processed_dir = Path(WATCHDOG_PROCESSED_FOLDER)
+        print(f"[DEBUG] Looking in processed dir: {processed_dir} (exists: {processed_dir.exists()})")
         
         if processed_dir.exists():
             # Try to find matching file - prefer PDF for better browser viewing
@@ -265,7 +293,9 @@ async def get_document_file(document_name: str):
             docx_match = None
             
             for file in processed_dir.iterdir():
+                # print(f"[DEBUG] Checking file: {file.name}")
                 if base_name.lower() in file.stem.lower():
+                    print(f"[DEBUG] Found match: {file.name}")
                     if file.suffix.lower() == ".pdf":
                         pdf_match = file
                     elif file.suffix.lower() in [".docx", ".doc"]:
