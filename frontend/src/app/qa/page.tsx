@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ArrowUp, X, ExternalLink } from "lucide-react";
+import { ArrowUp } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { sendChatMessage, ChatResponse } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { DocumentPreviewPanel } from "@/components/DocumentPreview";
 
 interface Message {
     id: string;
@@ -13,13 +14,6 @@ interface Message {
     content: string;
     confidence?: number;
     sources?: string[];
-}
-
-interface DocumentPreview {
-    name: string;
-    url: string | null;
-    loading: boolean;
-    searchTerm?: string;
 }
 
 const STORAGE_KEY = "lease-chat-history";
@@ -32,7 +26,8 @@ export default function QAPage() {
     const scrollRef = useRef<HTMLDivElement>(null);
 
     // Document preview state
-    const [preview, setPreview] = useState<DocumentPreview | null>(null);
+    const [previewOpen, setPreviewOpen] = useState(false);
+    const [previewDocName, setPreviewDocName] = useState<string | null>(null);
 
     const hasMessages = messages.length > 0;
 
@@ -67,37 +62,16 @@ export default function QAPage() {
         }
     }, [messages]);
 
-    // Open document preview with optional search term
-    const openDocumentPreview = useCallback(async (documentName: string, searchTerm?: string) => {
-        setPreview({ name: documentName, url: null, loading: true, searchTerm });
-
-        try {
-            const proxyUrl = `/api/documents/${encodeURIComponent(documentName)}`;
-            const response = await fetch(proxyUrl);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}`);
-            }
-            const blob = await response.blob();
-            let blobUrl = URL.createObjectURL(blob);
-
-            // Add search fragment for PDF navigation
-            if (searchTerm) {
-                blobUrl += `#search=${encodeURIComponent(searchTerm)}`;
-            }
-
-            setPreview({ name: documentName, url: blobUrl, loading: false, searchTerm });
-        } catch (error) {
-            console.error("Failed to load document:", error);
-            setPreview({ name: documentName, url: null, loading: false, searchTerm });
-        }
-    }, []);
+    // Open document preview
+    const openDocumentPreview = (documentName: string) => {
+        setPreviewDocName(documentName);
+        setPreviewOpen(true);
+    };
 
     // Close preview panel
     const closePreview = () => {
-        if (preview?.url) {
-            URL.revokeObjectURL(preview.url.split('#')[0]);
-        }
-        setPreview(null);
+        setPreviewOpen(false);
+        setPreviewDocName(null);
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -195,7 +169,7 @@ export default function QAPage() {
     return (
         <div className="flex h-screen bg-background overflow-hidden">
             {/* Main chat area */}
-            <div className={`flex flex-col transition-all duration-300 overflow-hidden ${preview ? 'w-1/2' : 'w-full'}`}>
+            <div className={`flex flex-col transition-all duration-300 overflow-hidden ${previewOpen ? 'w-1/2' : 'w-full'}`}>
                 {hasMessages ? (
                     <>
                         {/* Question header */}
@@ -338,51 +312,12 @@ export default function QAPage() {
                 )}
             </div>
 
-            {/* Document preview panel (right side) - fixed position */}
-            {preview && (
-                <div className="w-1/2 border-l border-border flex flex-col bg-background">
-                    {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-border">
-                        <div className="flex-1 min-w-0 mr-4">
-                            <h3 className="text-sm font-medium truncate">{preview.name}</h3>
-                            {preview.searchTerm && (
-                                <p className="text-xs text-muted-foreground">Searching: {preview.searchTerm}</p>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => preview.url && window.open(preview.url.split('#')[0], "_blank")}
-                                disabled={!preview.url}
-                            >
-                                <ExternalLink className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm" onClick={closePreview}>
-                                <X className="w-4 h-4" />
-                            </Button>
-                        </div>
-                    </div>
-                    {/* Document content */}
-                    <div className="flex-1 min-h-0">
-                        {preview.loading ? (
-                            <div className="flex items-center justify-center h-full">
-                                <div className="text-muted-foreground">Loading document...</div>
-                            </div>
-                        ) : preview.url ? (
-                            <iframe
-                                src={preview.url}
-                                className="w-full h-full border-0"
-                                title={preview.name}
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center h-full">
-                                <div className="text-muted-foreground">Failed to load document</div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* Document preview panel (right side) */}
+            <DocumentPreviewPanel
+                documentName={previewDocName}
+                open={previewOpen}
+                onClose={closePreview}
+            />
         </div>
     );
 }

@@ -5,6 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LoadingState } from "@/components/ui/loading-state";
+import { ErrorState } from "@/components/ui/error-state";
+import { DocumentPreviewModal } from "@/components/DocumentPreview";
 import {
     Dialog,
     DialogContent,
@@ -63,7 +66,7 @@ export default function AnalyticsPage() {
 
     // Document preview state
     const [previewOpen, setPreviewOpen] = useState(false);
-    const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string | null; loading?: boolean } | null>(null);
+    const [previewDocName, setPreviewDocName] = useState<string | null>(null);
 
     async function fetchData() {
         setIsLoading(true);
@@ -127,25 +130,9 @@ export default function AnalyticsPage() {
         return result;
     }, [data, search, filterBuilding, sortBy]);
 
-    const handleRowClick = async (lease: PortfolioSummary["lease_breakdown"][0]) => {
-        // Fetch PDF as blob to avoid cross-origin iframe issues
-        setPreviewDoc({ name: lease.document_name, url: null, loading: true });
+    const handleRowClick = (lease: PortfolioSummary["lease_breakdown"][0]) => {
+        setPreviewDocName(lease.document_name);
         setPreviewOpen(true);
-
-        try {
-            // Use local Next.js proxy to fetch document
-            const proxyUrl = `/api/documents/${encodeURIComponent(lease.document_name)}`;
-            const response = await fetch(proxyUrl);
-            if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-            }
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            setPreviewDoc({ name: lease.document_name, url: blobUrl, loading: false });
-        } catch (error) {
-            console.error("Failed to load document:", error);
-            setPreviewDoc({ name: lease.document_name, url: null, loading: false });
-        }
     };
 
     const handleDeleteClick = (e: React.MouseEvent, lease: PortfolioSummary["lease_breakdown"][0]) => {
@@ -175,19 +162,11 @@ export default function AnalyticsPage() {
     };
 
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-full">
-                <div className="text-muted-foreground text-sm">Loading...</div>
-            </div>
-        );
+        return <LoadingState />;
     }
 
     if (error) {
-        return (
-            <div className="flex items-center justify-center h-full">
-                <div className="text-sm text-muted-foreground">{error}</div>
-            </div>
-        );
+        return <ErrorState message={error} />;
     }
 
     if (!data) return null;
@@ -389,41 +368,11 @@ export default function AnalyticsPage() {
             </Dialog >
 
             {/* Document Preview Modal */}
-            <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-                <DialogContent className="!max-w-none w-[95vw] h-[95vh] p-0 flex flex-col">
-                    <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
-                        <div className="flex items-center justify-between">
-                            <DialogTitle className="text-base font-medium truncate pr-4">
-                                {previewDoc?.name || "Document"}
-                            </DialogTitle>
-                            <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => previewDoc?.url && window.open(previewDoc.url, "_blank")}
-                            >
-                                Open in New Tab
-                            </Button>
-                        </div>
-                    </DialogHeader>
-                    <div className="flex-1 min-h-0">
-                        {previewDoc?.loading ? (
-                            <div className="flex items-center justify-center h-full">
-                                <div className="text-muted-foreground">Loading document...</div>
-                            </div>
-                        ) : previewDoc?.url ? (
-                            <iframe
-                                src={previewDoc.url}
-                                className="w-full h-full border-0"
-                                title={previewDoc.name}
-                            />
-                        ) : (
-                            <div className="flex items-center justify-center h-full">
-                                <div className="text-muted-foreground">Failed to load document</div>
-                            </div>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
+            <DocumentPreviewModal
+                documentName={previewDocName}
+                open={previewOpen}
+                onOpenChange={setPreviewOpen}
+            />
         </ScrollArea >
     );
 }

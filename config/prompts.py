@@ -134,3 +134,94 @@ CONTEXTUAL_SUMMARY: [your summary]
 SEMANTIC_TAGS: [tag1, tag2, tag3]
 KEY_ENTITIES: [entity1, entity2]
 CLAUSE_TYPE: [clause_type]"""
+
+
+# --- Lease Extraction Prompts ---
+LEASE_EXTRACTION_PROMPT = """You are an expert commercial real estate lease abstractor. Your goal is to accurately extract key terms from the provided lease document text.
+
+CRITICAL EXTRACTION GUIDELINES:
+
+1. DATES - Look carefully for:
+   - "Possession Date": Often in Schedule B, may say "estimated to be [DATE]"
+   - "Commencement Date": Often defined as "expiry of the Fixturing Period" - if so, CALCULATE it by adding the Fixturing Period days to the Possession Date
+   - "Expiration Date": Calculate from Commencement Date + Term Years if not explicit
+   - "Offer to Lease Date": Look for references to a prior "Offer to Lease" document and its date
+   - "Indemnity Agreement Date": Look in Schedule D or the Indemnity Agreement section
+
+2. EXCLUSIVE USE - Search for:
+   - Section titled "Exclusive Use" (often in Schedules)
+   - Clauses about competitors the landlord cannot lease to (e.g., "will not lease to any tenant whose principal business is...")
+   - Can also be called "restrictive covenant" or "exclusivity"
+   - Extract the SPECIFIC restriction details
+
+3. RADIUS RESTRICTION - Look for:
+   - Clauses restricting tenant from operating similar business within X miles/km
+   - Often in Schedule B or restrictive covenants section
+
+4. RENEWAL OPTIONS - Format as: "X option(s) to renew for Y year term(s)"
+
+5. DATES FORMAT: Always use YYYY-MM-DD format
+
+6. If a field can be CALCULATED from other data (e.g., expiration = commencement + term), DO the calculation.
+
+7. Read the ENTIRE document including all Schedules (A, B, C, D) - key information is often there.
+
+8. RENT SCHEDULE - Extract ALL rent steps from the Basic Rent table:
+   - Look for tables with columns like "Lease Year", "Per Square Foot", "Per Annum", "Per Month"
+   - For EACH rent step, extract: start_year, end_year, rate_psf, monthly_rent, annual_rent
+   - ALWAYS extract the monthly_rent value (often labeled "Per Month" in the table)
+   - If monthly_rent is not explicit, CALCULATE it: annual_rent / 12
+
+9. AREA OF PREMISES - Various synonyms are used:
+   - "Rentable Area", "Leasable Area", "Area of Premises", "GLA" - these all mean the same thing
+   - Extract as rentable_area_sqft
+
+10. ADDRESSES - Look for:
+    - Tenant Address: Usually in "Notices" section (e.g., Section 15.10) or in the preamble
+    - Indemnifier Address: Often listed with the Indemnifier name in the preamble or Schedule D
+
+11. PERIODS & ALLOWANCES:
+    - Fixturing Period: Look for "X days' free possession" or "fixturing period" in Schedule B
+    - Free Rent Period: Any period where tenant pays no rent (distinct from fixturing)
+    - Tenant Improvement Allowance (TI Allowance): Landlord contribution for tenant buildout
+
+12. USE CLAUSE - Look for:
+    - "Permitted Use" section describing what business can be operated
+    - Often in Section 8.01 or Schedule B
+
+BE THOROUGH - missing data often exists in Schedules at the end of the document."""
+
+
+# --- Clause Extraction Prompts ---
+CLAUSE_EXTRACTION_PROMPT = """You are extracting lease clause summaries for side-by-side comparison. Extract EXACTLY these 9 clause types if present:
+
+CLAUSE TYPES (use these exact values):
+- rent_payment: Base rent, escalations, additional rent, CAM, NNN
+- security_deposit: Amount, conditions for return
+- term_renewal: Lease term length, renewal options, notice periods  
+- use_restrictions: Permitted use, exclusive use, prohibited activities
+- maintenance_repairs: Tenant vs landlord responsibilities
+- insurance: Required coverage types and amounts
+- termination: Early termination rights, conditions
+- assignment_subletting: Consent requirements, conditions
+- default_remedies: Cure periods, remedies available
+
+OUTPUT FORMAT - BE CONSISTENT:
+- summary: 1-2 short phrases. Max 40 words. Use **bold** for key numbers and values (e.g., **$22.50/sqft**, **10 years**, **3%**).
+- key_terms: Exactly 3-5 values, comma-separated. Include dollar amounts and time periods.
+- article_reference: Use format "Article X" or "Section X.XX" or "Schedule X"
+
+EXAMPLES:
+| clause_type | summary | key_terms |
+|-------------|---------|-----------|
+| rent_payment | Base rent **$22.50/sqft** Year 1, increasing **3%** annually. **Triple net** lease. | $22.50/sqft, 3% annual, NNN |
+| security_deposit | **$45,000** deposit (2 months rent). Returned within **30 days**. | $45,000, 2 months, 30 days |
+| term_renewal | **10-year** initial term. **Two 5-year** renewal options at market rent. | 10 years, 2 options, 5 years each |
+| use_restrictions | **Restaurant** use only. **Exclusive for sushi** within center. No alcohol. | Restaurant, exclusive sushi, no alcohol |
+| termination | **No early termination**. Must provide **6-month** notice for non-renewal. | No early out, 6-month notice |
+
+IMPORTANT: 
+- Use **bold** markdown for all key numbers, amounts, and important terms
+- Only extract clauses that are EXPLICITLY stated in the lease
+- Use consistent formatting across all clauses
+- If a clause isn't clearly defined, skip it"""

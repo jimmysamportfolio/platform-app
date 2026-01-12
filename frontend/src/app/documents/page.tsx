@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LoadingState } from "@/components/ui/loading-state";
+import { ErrorState } from "@/components/ui/error-state";
 import {
     Dialog,
     DialogContent,
@@ -80,19 +82,11 @@ export default function DocumentsPage() {
     };
 
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-full bg-muted/30">
-                <div className="text-muted-foreground text-sm">Loading...</div>
-            </div>
-        );
+        return <LoadingState />;
     }
 
     if (error) {
-        return (
-            <div className="flex items-center justify-center h-full bg-muted/30">
-                <div className="text-sm text-muted-foreground">{error}</div>
-            </div>
-        );
+        return <ErrorState message={error} />;
     }
 
     return (
