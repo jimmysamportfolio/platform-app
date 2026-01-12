@@ -41,29 +41,26 @@ RUN pip install --upgrade pip && \
 # -----------------------------------------------------------------------------
 FROM python:3.11-slim as runtime
 
-# Set working directory
 WORKDIR /app
 
-# Create non-root user for security (never run containers as root in production)
+# Install LibreOffice for DOCX to PDF conversion
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libreoffice-writer \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user for security
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid 1000 --shell /bin/bash appuser
 
-# Copy virtual environment from builder stage
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Set Python environment variables
-# PYTHONUNBUFFERED: Ensures real-time log output (critical for Docker logs)
-# PYTHONDONTWRITEBYTECODE: Prevents .pyc file clutter in container
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
-# Copy application code
 COPY --chown=appuser:appuser . .
 
-# Create necessary directories with proper permissions
-# These will be mounted as volumes in docker-compose
-RUN mkdir -p data input output processed .flashrank_cache && \
+RUN mkdir -p data data/temp input output processed .flashrank_cache && \
     chown -R appuser:appuser data input output processed .flashrank_cache
 
 # Switch to non-root user
@@ -81,9 +78,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # - UvicornWorker: Async support for FastAPI
 # - 120s timeout: Long timeout for LLM operations (parsing, generation)
 CMD ["gunicorn", "src.api.server:app", \
-     "--workers", "4", \
-     "--worker-class", "uvicorn.workers.UvicornWorker", \
-     "--bind", "0.0.0.0:8000", \
-     "--timeout", "120", \
-     "--access-logfile", "-", \
-     "--error-logfile", "-"]
+    "--workers", "4", \
+    "--worker-class", "uvicorn.workers.UvicornWorker", \
+    "--bind", "0.0.0.0:8000", \
+    "--timeout", "120", \
+    "--access-logfile", "-", \
+    "--error-logfile", "-"]
