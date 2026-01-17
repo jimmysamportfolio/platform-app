@@ -43,27 +43,33 @@ FROM python:3.11-slim as runtime
 
 WORKDIR /app
 
-# Install LibreOffice for DOCX to PDF conversion
+# Install LibreOffice and Microsoft-compatible fonts for better DOCX conversion
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice-writer \
+    fonts-liberation \
+    fonts-dejavu-core \
+    fontconfig \
+    && fc-cache -f \
     && rm -rf /var/lib/apt/lists/*
 
-# Create non-root user for security
+# Create non-root user with home directory for LibreOffice
 RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid 1000 --shell /bin/bash appuser
+    useradd --uid 1000 --gid 1000 --shell /bin/bash --create-home appuser && \
+    mkdir -p /home/appuser/.cache/dconf && \
+    chown -R appuser:appuser /home/appuser
 
 COPY --from=builder /opt/venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    HOME=/home/appuser
 
 COPY --chown=appuser:appuser . .
 
 RUN mkdir -p data data/temp input output processed .flashrank_cache && \
     chown -R appuser:appuser data input output processed .flashrank_cache
 
-# Switch to non-root user
 USER appuser
 
 # Expose the API port
@@ -74,13 +80,13 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
 # Start with Gunicorn + Uvicorn workers (production ASGI server)
-# - 4 workers: Good for handling concurrent requests
+# - 1 worker: Single file watcher and pending queue (avoids duplicates)
 # - UvicornWorker: Async support for FastAPI
-# - 120s timeout: Long timeout for LLM operations (parsing, generation)
+# - 300s timeout: Long timeout for LLM operations (parsing, generation)
 CMD ["gunicorn", "src.api.server:app", \
-    "--workers", "4", \
+    "--workers", "1", \
     "--worker-class", "uvicorn.workers.UvicornWorker", \
     "--bind", "0.0.0.0:8000", \
-    "--timeout", "120", \
+    "--timeout", "150", \
     "--access-logfile", "-", \
     "--error-logfile", "-"]

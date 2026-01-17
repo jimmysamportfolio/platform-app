@@ -1,11 +1,11 @@
 """
-File Watchdog Module (Queue Mode)
+File Watchdog Module (Queue Mode with Polling)
 
 Monitors an input folder for new documents and queues them for user selection.
-Instead of auto-processing, files wait for the user to choose extraction mode.
+Uses polling instead of inotify for network share compatibility (SMB/CIFS).
 
 This module is responsible for:
-- Watching the 'input' folder for new files
+- Watching the 'input' folder for new files (via polling)
 - Queuing detected files for user decision
 - Broadcasting events via WebSocket to frontend
 - Processing files with the selected mode (full or clause-only)
@@ -27,7 +27,8 @@ sys.path.insert(0, PROJECT_ROOT)
 sys.path.insert(0, os.path.join(PROJECT_ROOT, "src"))
 
 from dotenv import load_dotenv
-from watchdog.observers import Observer
+# Use PollingObserver for network share compatibility (inotify doesn't work with SMB/CIFS)
+from watchdog.observers.polling import PollingObserver
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent
 
 from config.settings import (
@@ -40,6 +41,9 @@ from ingestion.ingest_pipeline import IngestionPipeline, PipelineConfig
 from utils.db import init_db, log_ingestion, is_document_processed
 
 load_dotenv()
+
+# Polling interval in seconds (how often to check for new files)
+POLLING_INTERVAL = 5
 
 
 @dataclass
@@ -88,7 +92,7 @@ class IngestionHandler(FileSystemEventHandler):
         # Track files that existed on startup (to ignore them)
         self.startup_files: Set[str] = self._get_existing_files()
         
-        print(f"✅ Watchdog initialized (Queue Mode)")
+        print(f"✅ Watchdog initialized (Polling Mode)")
         print(f"   📂 Watching: {self.input_folder}")
         print(f"   📁 Processed folder: {self.processed_folder}")
         print(f"   📋 Files on startup (ignored): {len(self.startup_files)}")
@@ -296,23 +300,24 @@ def run_watchdog(
     processed_folder: str = WATCHDOG_PROCESSED_FOLDER,
     db_path: str = DEFAULT_DB_PATH,
 ):
-    """Start the file watchdog in queue mode."""
+    """Start the file watchdog in polling mode (for network share compatibility)."""
     global _handler_instance
     
     print("\n" + "="*60)
-    print("🐕 STARTING FILE WATCHDOG (Queue Mode)")
+    print("🐕 STARTING FILE WATCHDOG (Polling Mode)")
     print("="*60 + "\n")
     
     # Create event handler
     _handler_instance = IngestionHandler(input_folder, processed_folder, db_path)
     
-    # Create and configure observer
-    observer = Observer()
+    # Use PollingObserver for network share compatibility (checks every POLLING_INTERVAL seconds)
+    observer = PollingObserver(timeout=POLLING_INTERVAL)
     observer.schedule(_handler_instance, str(_handler_instance.input_folder), recursive=False)
     
     # Start watching
     observer.start()
-    print(f"\n🔍 Watching for new files... (Press Ctrl+C to stop)\n")
+    print(f"\n🔍 Watching for new files (polling every {POLLING_INTERVAL}s)...")
+    print(f"   Press Ctrl+C to stop\n")
     
     try:
         while True:

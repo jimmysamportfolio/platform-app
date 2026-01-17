@@ -49,7 +49,7 @@ export function DocumentPreviewModal({
             setUrl(null);
 
             try {
-                const proxyUrl = `/api/documents/${encodeURIComponent(documentName!)}`;
+                const proxyUrl = `/api/documents/${encodeURIComponent(documentName!)}/file`;
                 const response = await fetch(proxyUrl);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -181,7 +181,7 @@ export function DocumentPreviewPanel({
             setUrl(null);
 
             try {
-                const proxyUrl = `/api/documents/${encodeURIComponent(documentName!)}`;
+                const proxyUrl = `/api/documents/${encodeURIComponent(documentName!)}/file`;
                 const response = await fetch(proxyUrl);
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}`);

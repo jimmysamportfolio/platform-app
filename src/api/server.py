@@ -24,9 +24,9 @@ from retrieval.orchestrator import LeaseRAGOrchestrator
 from analysis.portfolio import PortfolioAnalyzer
 from utils.db import get_all_leases, get_lease_by_tenant, DEFAULT_DB_PATH, get_leases_grouped_by_property, get_clauses_for_comparison
 
-# File Watcher Imports
-from watchdog.observers import Observer
-from ingestion.file_watcher import IngestionHandler
+# File Watcher Imports - use PollingObserver for network share compatibility
+from watchdog.observers.polling import PollingObserver
+from ingestion.file_watcher import IngestionHandler, POLLING_INTERVAL
 from config.settings import WATCHDOG_INPUT_FOLDER, WATCHDOG_PROCESSED_FOLDER
 
 app = FastAPI(
@@ -58,7 +58,7 @@ app.add_middleware(
 # Initialize components lazily
 _orchestrator: Optional[LeaseRAGOrchestrator] = None
 _analyzer: Optional[PortfolioAnalyzer] = None
-_observer: Optional[Observer] = None  # File watcher observer
+_observer: Optional[PollingObserver] = None  # File watcher observer
 _ingestion_handler: Optional[IngestionHandler] = None  # Reference to handler
 
 # WebSocket connection manager for real-time notifications
@@ -94,11 +94,11 @@ async def startup_event():
             processed_folder=WATCHDOG_PROCESSED_FOLDER,
             db_path=DEFAULT_DB_PATH
         )
-        _observer = Observer()
+        _observer = PollingObserver(timeout=POLLING_INTERVAL)
         _observer.schedule(_ingestion_handler, str(_ingestion_handler.input_folder), recursive=False)
         _observer.start()
         
-        # Register callback for WebSocket notifications
+        print(f"✅ File Watcher running (polling every {POLLING_INTERVAL}s)")
         def notify_new_file(file_name: str, file_path: str):
             asyncio.run(ws_manager.broadcast({
                 "type": "new_file",
@@ -280,7 +280,7 @@ async def get_document_content(document_name: str):
 
 @app.get("/api/documents/{document_name}/file")
 async def get_document_file(document_name: str):
-    """Serve the original document file (PDF/DOCX) for viewing."""
+    """Serve the document file for viewing - prefers PDF for browser compatibility."""
     from fastapi.responses import Response
     
     try:
@@ -293,45 +293,47 @@ async def get_document_file(document_name: str):
         
         print(f"[DEBUG] get_document_file: Request for '{document_name}' -> Base: '{base_name}'")
 
-        # Look in processed folder for the original file
-        processed_dir = Path(WATCHDOG_PROCESSED_FOLDER)
-        print(f"[DEBUG] Looking in processed dir: {processed_dir} (exists: {processed_dir.exists()})")
+        # Search directories in order of preference
+        search_dirs = [
+            Path("data/temp"),     # Converted PDFs
+            Path(WATCHDOG_PROCESSED_FOLDER),  # Processed originals
+        ]
         
-        if processed_dir.exists():
-            # Try to find matching file - prefer PDF for better browser viewing
-            pdf_match = None
-            docx_match = None
+        pdf_match = None
+        docx_match = None
+        
+        for search_dir in search_dirs:
+            if not search_dir.exists():
+                continue
+            print(f"[DEBUG] Searching in: {search_dir}")
             
-            for file in processed_dir.iterdir():
-                # print(f"[DEBUG] Checking file: {file.name}")
+            for file in search_dir.iterdir():
                 if base_name.lower() in file.stem.lower():
                     print(f"[DEBUG] Found match: {file.name}")
-                    if file.suffix.lower() == ".pdf":
+                    if file.suffix.lower() == ".pdf" and not pdf_match:
                         pdf_match = file
-                    elif file.suffix.lower() in [".docx", ".doc"]:
+                    elif file.suffix.lower() in [".docx", ".doc"] and not docx_match:
                         docx_match = file
+        
+        # Prefer PDF (browser can display inline), fall back to DOCX
+        match = pdf_match or docx_match
+        
+        if match:
+            media_types = {
+                ".pdf": "application/pdf",
+                ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".doc": "application/msword",
+            }
+            media_type = media_types.get(match.suffix.lower(), "application/octet-stream")
             
-            # Prefer PDF (better browser support), fall back to DOCX
-            match = pdf_match or docx_match
-            
-            if match:
-                # Set appropriate media type
-                media_types = {
-                    ".pdf": "application/pdf",
-                    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                    ".doc": "application/msword",
-                }
-                media_type = media_types.get(match.suffix.lower(), "application/octet-stream")
-                
-                # Read file content and return as Response (inherits CORS from middleware)
-                content = match.read_bytes()
-                return Response(
-                    content=content,
-                    media_type=media_type,
-                    headers={
-                        "Content-Disposition": f"inline; filename=\"{match.name}\"",
-                    },
-                )
+            content = match.read_bytes()
+            return Response(
+                content=content,
+                media_type=media_type,
+                headers={
+                    "Content-Disposition": f"inline; filename=\"{match.name}\"",
+                },
+            )
         
         raise HTTPException(status_code=404, detail="Document file not found")
     except HTTPException:
@@ -350,11 +352,19 @@ async def delete_document(document_name: str):
     2. The ingestion logs
     3. Vectors from Pinecone
     4. Pending files from queue
+    5. Files from processed, temp, and parsed folders
     """
     global _ingestion_handler
     try:
         from utils.db import delete_lease, delete_ingestion_log
         from retrieval.vector_store import LeaseVectorStore
+        
+        # Get base name without extension for file matching
+        base_name = document_name
+        for ext in [".docx", ".pdf", ".doc"]:
+            if base_name.lower().endswith(ext):
+                base_name = base_name[:-len(ext)]
+                break
         
         # 1. Delete from database
         lease_deleted = delete_lease(document_name)
@@ -370,11 +380,30 @@ async def delete_document(document_name: str):
         if _ingestion_handler:
             _ingestion_handler.forget_file(document_name)
         
-        # If nothing was found anywhere, raise 404
-        if not lease_deleted and not log_deleted and not pending_removed:
-            raise HTTPException(status_code=404, detail="Document not found in database or pending queue")
+        # 4. Delete files from processed, temp, and parsed folders
+        files_deleted = []
+        cleanup_dirs = [
+            Path(WATCHDOG_PROCESSED_FOLDER),  # processed/
+            Path("data/temp"),                 # temp PDFs
+            Path("data/parsed"),               # parsed markdown
+        ]
         
-        # 4. Delete vectors from Pinecone (only if it was in database)
+        for cleanup_dir in cleanup_dirs:
+            if cleanup_dir.exists():
+                for file in cleanup_dir.iterdir():
+                    if base_name.lower() in file.stem.lower():
+                        try:
+                            file.unlink()
+                            files_deleted.append(str(file))
+                            print(f"🗑️ Deleted: {file}")
+                        except Exception as e:
+                            print(f"⚠️ Failed to delete {file}: {e}")
+        
+        # If nothing was found anywhere, raise 404
+        if not lease_deleted and not log_deleted and not pending_removed and not files_deleted:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # 5. Delete vectors from Pinecone (only if it was in database)
         vectors_deleted = 0
         if lease_deleted:
             try:
@@ -390,7 +419,8 @@ async def delete_document(document_name: str):
                 "lease_deleted": lease_deleted,
                 "logs_deleted": log_deleted,
                 "pending_removed": pending_removed,
-                "vectors_deleted": vectors_deleted
+                "vectors_deleted": vectors_deleted,
+                "files_deleted": files_deleted
             }
         }
     except HTTPException:

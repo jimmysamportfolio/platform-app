@@ -4,7 +4,9 @@
  * Handles all communication with the FastAPI backend.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// In production (behind Nginx), use relative URLs. In local dev, use localhost:8000.
+const isLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || (isLocalDev ? "http://localhost:8000" : "");
 
 /**
  * Generic fetch wrapper with error handling.
@@ -270,7 +272,9 @@ export async function getKeyTerms(leaseIds: number[]): Promise<KeyTermsResponse>
 
 // --- Ingestion API ---
 
-export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000";
+// WebSocket URL - use relative in production, localhost in dev
+const wsIsLocalDev = typeof window !== 'undefined' && window.location.hostname === 'localhost';
+export const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || (wsIsLocalDev ? "ws://localhost:8000" : `ws://${typeof window !== 'undefined' ? window.location.host : ''}`);
 
 export interface PendingFile {
     file_path: string;

@@ -34,3 +34,6 @@ nest_asyncio>=1.5.0            # Allows nested event loops (needed for LangChain
 # --- API Server ---
 fastapi>=0.115.0               # REST API for frontend
 uvicorn>=0.30.0                # ASGI server for FastAPI
+
+# --- Document Generation ---
+python-docx>=1.1.0             # Create/modify Word documents

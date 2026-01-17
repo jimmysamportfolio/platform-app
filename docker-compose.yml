@@ -66,8 +66,10 @@ services:
 
     environment:
       - NODE_ENV=production
-      # API URL relative to browser - Nginx proxies /api to backend
+      # Client-side API URL - empty for relative URLs via Nginx
       - NEXT_PUBLIC_API_URL=
+      # Server-side API URL for Next.js API routes (proxy)
+      - BACKEND_URL=http://backend:8000
 
     # Internal network only
     expose:

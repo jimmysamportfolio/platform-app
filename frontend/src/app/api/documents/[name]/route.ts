@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// Server-side API call - use Docker service name in production, localhost in dev
+const API_BASE_URL = process.env.BACKEND_URL || "http://backend:8000";
 
 /**
  * Proxy route for document files to avoid CORS issues.
